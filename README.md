@@ -45,9 +45,6 @@ bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/
 首次运行后会安装快捷命令 **`nb`**，以后直接输入 `nb` 打开主菜单。
 
 ```text
-╔╗╔╦╔╦╗╔╗ ╦ ╦╔═╗
-║║║║║║║╠╩╗║ ║╚═╗
-╝╚╝╩╩ ╩╚═╝╚═╝╚═╝
 Nimbus · 云服务器工具箱 v1.0.0
 ------------------------
 1.   系统信息查询
