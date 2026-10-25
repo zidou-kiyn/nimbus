@@ -23869,47 +23869,6 @@ echo ""
 
 
 
-games_server_tools() {
-
-	while true; do
-	  clear
-	  echo -e "游戏开服脚本合集"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1. ${gl_bai}幻兽帕鲁开服脚本"
-	  echo -e "${gl_kjlan}2. ${gl_bai}我的世界开服脚本"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0. ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
-	  read -e -p "请输入你的选择: " sub_choice
-
-	  case $sub_choice in
-
-		  1) send_stats "幻兽帕鲁开服脚本" ; cd ~
-			 curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/palworld.sh ; chmod +x palworld.sh ; ./palworld.sh
-			 exit
-			 ;;
-		  2) send_stats "我的世界开服脚本" ; cd ~
-			 curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/mc.sh ; chmod +x mc.sh ; ./mc.sh
-			 exit
-			 ;;
-
-		  0)
-			kejilion
-			;;
-
-		  *)
-			echo "无效的输入!"
-			;;
-	  esac
-	  break_end
-
-	done
-
-
-}
-
-
-
 kejilion_update() {
 
 send_stats "脚本更新"
@@ -24066,7 +24025,6 @@ echo -e "${gl_kjlan}12.  ${gl_bai}后台工作区"
 echo -e "${gl_kjlan}13.  ${gl_bai}系统工具"
 echo -e "${gl_kjlan}14.  ${gl_bai}服务器集群控制"
 echo -e "${gl_kjlan}15.  ${gl_bai}广告专栏"
-echo -e "${gl_kjlan}16.  ${gl_bai}游戏开服脚本合集"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -24092,7 +24050,6 @@ case $choice in
   13) linux_Settings ;;
   14) linux_cluster ;;
   15) kejilion_Affiliates ;;
-  16) games_server_tools ;;
   00) kejilion_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
