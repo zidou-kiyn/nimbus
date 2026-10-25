@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.1.0-6366f1?style=flat-square" alt="version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.0-6366f1?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/shell-bash-38bdf8?style=flat-square&logo=gnubash&logoColor=white" alt="bash">
   <img src="https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20RHEL%20%7C%20Alpine-0ea5e9?style=flat-square&logo=linux&logoColor=white" alt="platform">
   <a href="https://github.com/zidou-kiyn/nimbus/commits/main"><img src="https://img.shields.io/github/last-commit/zidou-kiyn/nimbus?style=flat-square&color=818cf8" alt="last commit"></a>
@@ -47,7 +47,7 @@ bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/
 新机器推荐从 **`nb init`（新机开荒）** 开始，按顺序逐项完成初始化。
 
 ```text
-Nimbus · 云服务器工具箱 v1.1.0
+Nimbus · 云服务器工具箱 v1.2.0
 ------------------------
 1.   系统信息查询
 2.   系统更新
@@ -85,7 +85,7 @@ Nimbus · 云服务器工具箱 v1.1.0
 | 账号与登录 | 修改密码、密码 / 密钥登录模式、禁用 root 并新建账户、用户管理、密码生成器 |
 | 网络 | 开放端口、修改 SSH 端口、DNS 优化、IPv4/IPv6 优先、端口占用、防火墙、hosts、网卡管理 |
 | 系统 | 一键重装系统（InstallNET，可自定义密码 / 端口 / 软 RAID）、虚拟内存、时区、BBRv3、主机名、更新源、定时任务、系统语言、环境变量 |
-| 安全与运维 | SSH 防御（fail2ban）、限流自动关机、TG-bot 监控预警、命令行美化、系统备份与恢复、硬盘分区、命令历史、日志管理 |
+| 安全与运维 | SSH 防御（fail2ban）、自动安装安全更新、限流自动关机、TG-bot 监控预警、命令行美化、系统备份与恢复、硬盘分区、命令历史、日志管理 |
 
 ## ⌨️ 命令行速查
 
@@ -93,6 +93,7 @@ Nimbus · 云服务器工具箱 v1.1.0
 |---|---|
 | `nb` | 打开主菜单 |
 | `nb init` | 新机开荒 |
+| `nb secupdate` | 自动安装安全更新 |
 | `nb info` | 系统信息 |
 | `nb update` / `nb clean` | 更新系统 / 清理垃圾 |
 | `nb install <包…>` / `nb remove <包…>` | 安装 / 卸载软件包 |
@@ -125,10 +126,10 @@ Nimbus · 云服务器工具箱 v1.1.0
 |---|---|
 | 一 · 系统安装 | 1 重装系统（可选） |
 | 二 · 基础与内核 | 2 修改 root 密码 · 3 更新系统 · 4 内核与 BBR · 5 重启并检查内核 |
-| 三 · 系统设置 | 6 时区 · 7 主机名 · 8 hosts 解析 · 9 虚拟内存 · 10 DNS |
-| 四 · SSH 与账号安全 | 11 密钥登录（禁用密码） · 12 SSH 端口 · 13 新建 sudo 用户并禁用 root（可选） · 14 fail2ban |
-| 五 · 环境与监控 | 15 tmux 及推荐配置 · 16 TG-bot 监控 · 17 系统语言（可选） · 18 命令行美化 |
-| 六 · 应用部署（按需） | 19 Komari 探针 · 20 Realm 端口转发 · 21 XBoard-node 节点 |
+| 三 · 系统设置 | 6 时区 · 7 主机名 · 8 hosts 解析 · 9 虚拟内存 · 10 DNS · 11 自动安装安全更新 |
+| 四 · SSH 与账号安全 | 12 密钥登录（禁用密码） · 13 SSH 端口 · 14 新建 sudo 用户并禁用 root（可选） · 15 fail2ban |
+| 五 · 环境与监控 | 16 tmux 及推荐配置 · 17 TG-bot 监控 · 18 系统语言（可选） · 19 命令行美化 |
+| 六 · 应用部署（按需） | 20 Komari 探针 · 21 Realm 端口转发 · 22 XBoard-node 节点 |
 
 ## 📁 项目结构
 

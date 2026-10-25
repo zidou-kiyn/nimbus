@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.1.0"
+sh_v="1.2.0"
 
 
 gl_hui='\e[37m'
@@ -5594,6 +5594,141 @@ xboard_node_menu() {
 }
 
 # ---------------------------------------------------------------------------
+# 自动安装安全更新（unattended-upgrades，仅 Debian / Ubuntu）
+# ---------------------------------------------------------------------------
+NB_UU_CONF="/etc/apt/apt.conf.d/52nimbus-security-only"
+NB_UU_PERIODIC="/etc/apt/apt.conf.d/20auto-upgrades"
+NB_UU_LOG="/var/log/unattended-upgrades/unattended-upgrades.log"
+
+nb_secupd_os() {
+	local id="" like=""
+	command -v apt-get >/dev/null 2>&1 || return 1
+	if [ -r /etc/os-release ]; then
+		id=$(. /etc/os-release && echo "$ID")
+		like=$(. /etc/os-release && echo "$ID_LIKE")
+	fi
+	case "$id" in
+		debian|ubuntu) echo "$id" ;;
+		*) case " $like " in *" ubuntu "*) echo ubuntu ;; *" debian "*) echo debian ;; *) return 1 ;; esac ;;
+	esac
+}
+
+nb_secupd_enabled() {
+	dpkg -s unattended-upgrades >/dev/null 2>&1 &&
+		apt-config dump 2>/dev/null | grep -q '^APT::Periodic::Unattended-Upgrade "1"'
+}
+
+nb_secupd_last() {
+	[ -s "$NB_UU_LOG" ] && tail -1 "$NB_UU_LOG" | cut -c1-16
+}
+
+nb_secupd_next() {
+	command systemctl show -p NextElapseUSecRealtime --value apt-daily-upgrade.timer 2>/dev/null | grep -v '^n/a$'
+}
+
+nb_secupd_enable() {
+	local os choice
+	os=$(nb_secupd_os) || { echo -e "${gl_hong}仅支持 Debian / Ubuntu${gl_bai}"; return 1; }
+	if nb_is_pve; then
+		echo -e "${gl_huang}当前是 Proxmox VE 宿主机${gl_bai}：只会自动安装 Debian 安全源的补丁，PVE 源（内核、qemu、pve-manager 等）不受影响"
+		echo "PVE 本身的升级仍需手动执行 apt dist-upgrade"
+		read -r -e -p "确定开启吗？(Y/N): " choice
+		[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; return 1; }
+	fi
+	dpkg -s unattended-upgrades >/dev/null 2>&1 || install unattended-upgrades || return 1
+
+	{
+		echo '// Managed by nimbus：只自动安装安全更新，不自动重启（覆盖 50unattended-upgrades 的来源列表）'
+		echo '#clear Unattended-Upgrade::Origins-Pattern;'
+		echo '#clear Unattended-Upgrade::Allowed-Origins;'
+		echo 'Unattended-Upgrade::Origins-Pattern {'
+		if [ "$os" = "ubuntu" ]; then
+			# shellcheck disable=SC2016  # ${distro_codename} 由 unattended-upgrades 展开
+			printf '\t"%s";\n' 'origin=Ubuntu,archive=${distro_codename}-security' \
+				'origin=UbuntuESMApps,archive=${distro_codename}-apps-security' \
+				'origin=UbuntuESM,archive=${distro_codename}-infra-security'
+		else
+			# shellcheck disable=SC2016
+			printf '\t"%s";\n' 'origin=Debian,codename=${distro_codename}-security,label=Debian-Security' \
+				'origin=Debian,codename=${distro_codename},label=Debian-Security'
+		fi
+		echo '};'
+		echo 'Unattended-Upgrade::Automatic-Reboot "false";'
+		echo 'Unattended-Upgrade::MinimalSteps "true";'
+	} > "$NB_UU_CONF"
+	cat > "$NB_UU_PERIODIC" <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+	if [ -d /run/systemd/system ]; then
+		command systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1
+	fi
+	echo -e "${gl_lv}已开启自动安装安全更新${gl_bai}，生效的更新来源:"
+	apt-config dump 2>/dev/null | grep -A5 '^Unattended-Upgrade::Origins-Pattern' | grep -E '^Unattended-Upgrade::Origins-Pattern::' | sed 's/^[^"]*"/  /; s/";$//'
+}
+
+nb_secupd_disable() {
+	[ -f "$NB_UU_PERIODIC" ] && sed -i 's/^APT::Periodic::Unattended-Upgrade .*/APT::Periodic::Unattended-Upgrade "0";/' "$NB_UU_PERIODIC"
+	apt-config dump 2>/dev/null | grep -q '^APT::Periodic::Unattended-Upgrade "1"' &&
+		echo 'APT::Periodic::Unattended-Upgrade "0";' >> "$NB_UU_PERIODIC"
+	rm -f "$NB_UU_CONF"
+	echo -e "${gl_lv}已关闭自动安装安全更新${gl_bai}（unattended-upgrades 软件包保留）"
+}
+
+nb_security_updates() {
+	root_use
+	local choice last next
+	while true; do
+		clear
+		echo "自动安装安全更新"
+		echo "------------------------------------------------"
+		if ! nb_secupd_os >/dev/null; then
+			echo -e "${gl_hui}当前系统不支持（仅支持 Debian / Ubuntu）${gl_bai}"
+			return
+		fi
+		if nb_secupd_enabled && [ -f "$NB_UU_CONF" ]; then
+			echo -e "当前状态: ${gl_lv}已开启（仅安全更新）${gl_bai}"
+		elif nb_secupd_enabled; then
+			echo -e "当前状态: ${gl_huang}已开启（系统默认策略，含普通稳定更新）${gl_bai}"
+		else
+			echo -e "当前状态: ${gl_hui}未开启${gl_bai}"
+		fi
+		last=$(nb_secupd_last); next=$(nb_secupd_next)
+		[ -n "$last" ] && echo "上次运行: $last"
+		nb_secupd_enabled && [ -n "$next" ] && echo "下次运行: $next"
+		nb_reboot_pending && echo -e "${gl_huang}有已安装的更新（如新内核）需要重启才能生效${gl_bai}"
+		echo -e "${gl_hui}每天自动安装 Debian/Ubuntu 安全源补丁；不自动重启，不动第三方源（XanMod、Docker、PVE 等）${gl_bai}"
+		echo "------------------------------------------------"
+		echo "1. 开启（仅安全更新）          2. 关闭"
+		echo "3. 模拟运行（只检查不安装）    4. 立即执行一次"
+		echo "5. 查看运行日志"
+		echo "------------------------------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) nb_secupd_enable; break_end ;;
+			2) nb_secupd_disable; break_end ;;
+			3|4)
+				if ! command -v unattended-upgrade >/dev/null 2>&1; then
+					echo "请先开启（会安装 unattended-upgrades）"
+				else
+					apt-get update -qq
+					if [ "$choice" = 3 ]; then unattended-upgrade --dry-run -v; else unattended-upgrade -v; fi
+				fi
+				break_end
+				;;
+			5)
+				if [ -s "$NB_UU_LOG" ]; then tail -n 30 "$NB_UU_LOG"; else echo "暂无运行日志"; fi
+				break_end
+				;;
+			*) break ;;
+		esac
+	done
+}
+
+# ---------------------------------------------------------------------------
 # 新机开荒：把新机常用操作按推荐顺序集中到一个菜单，逐项执行
 # ---------------------------------------------------------------------------
 NB_WZ_STATE="/etc/nimbus/wizard.state"
@@ -5661,6 +5796,12 @@ nb_wz_status() {
 		dns)
 			v=$(awk '/^nameserver/{print $2}' /etc/resolv.conf 2>/dev/null | head -2 | paste -sd' ' -)
 			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="${v:-未知}" ;;
+		autosec)
+			if ! nb_secupd_os >/dev/null; then WZ_TEXT="仅支持 Debian / Ubuntu"
+			elif nb_secupd_enabled && [ -f "$NB_UU_CONF" ]; then WZ_DONE=true; WZ_TEXT="已开启（仅安全更新）"
+			elif nb_secupd_enabled; then WZ_DONE=true; WZ_TEXT="已开启（系统默认策略）"
+			else WZ_TEXT="未开启"; fi
+			v=$(nb_secupd_last); [ -n "$v" ] && WZ_TEXT="$WZ_TEXT · 上次 $v" ;;
 		sshkey)
 			v=$(nb_sshd_opt passwordauthentication)
 			if [ "$v" = "no" ]; then WZ_DONE=true; WZ_TEXT="已禁用密码登录"; else WZ_TEXT="允许密码登录"; fi ;;
@@ -5739,10 +5880,10 @@ nb_wz_reboot_check() {
 nb_wizard() {
 	root_use
 	local choice next next_title i key
-	local -a keys=("dd" "passwd" "update" "bbr" "reboot" "tz" "hostname" "hosts" "swap" "dns" "sshkey" "sshport" "sudo" "f2b" "tmux" "tg" "lang" "ps1" "komari" "realm" "xboard")
-	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "TG-bot 监控预警                    " "切换系统语言（可选）               " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
-	local -a funcs=("dd_xitong" "nb_wz_passwd" "linux_update" "bbrv3" "nb_wz_reboot_check" "nb_timezone_menu" "nb_hostname_menu" "nb_hosts_menu" "nb_swap_menu" "set_dns_ui" "sshkey_panel" "nb_ssh_port_menu" "nb_create_sudo_user" "fail2ban_panel" "tmux_setup" "tg_notify_menu" "linux_language" "shell_bianse" "komari_agent_menu" "realm_xwpf" "xboard_node_menu")
-	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "0" "1" "0" "1" "1" "1")
+	local -a keys=("dd" "passwd" "update" "bbr" "reboot" "tz" "hostname" "hosts" "swap" "dns" "autosec" "sshkey" "sshport" "sudo" "f2b" "tmux" "tg" "lang" "ps1" "komari" "realm" "xboard")
+	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "自动安装安全更新                   " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "TG-bot 监控预警                    " "切换系统语言（可选）               " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
+	local -a funcs=("dd_xitong" "nb_wz_passwd" "linux_update" "bbrv3" "nb_wz_reboot_check" "nb_timezone_menu" "nb_hostname_menu" "nb_hosts_menu" "nb_swap_menu" "set_dns_ui" "nb_security_updates" "sshkey_panel" "nb_ssh_port_menu" "nb_create_sudo_user" "fail2ban_panel" "tmux_setup" "tg_notify_menu" "linux_language" "shell_bianse" "komari_agent_menu" "realm_xwpf" "xboard_node_menu")
+	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "0" "1" "0" "1" "1" "1")
 	while true; do
 		clear
 		echo -e "${gl_cyan}新机开荒${gl_bai} · 按推荐顺序逐项完成，可随时退出，回来后继续（nb init）"
@@ -5753,9 +5894,9 @@ nb_wizard() {
 				1) echo -e "${gl_cyan}【一 · 系统安装】${gl_bai}" ;;
 				2) echo -e "${gl_cyan}【二 · 基础与内核（装完新内核重启一次）】${gl_bai}" ;;
 				6) echo -e "${gl_cyan}【三 · 系统设置】${gl_bai}" ;;
-				11) echo -e "${gl_cyan}【四 · SSH 与账号安全】${gl_bai}" ;;
-				15) echo -e "${gl_cyan}【五 · 环境与监控】${gl_bai}" ;;
-				19) echo -e "${gl_cyan}【六 · 应用部署（按需）】${gl_bai}" ;;
+				12) echo -e "${gl_cyan}【四 · SSH 与账号安全】${gl_bai}" ;;
+				16) echo -e "${gl_cyan}【五 · 环境与监控】${gl_bai}" ;;
+				20) echo -e "${gl_cyan}【六 · 应用部署（按需）】${gl_bai}" ;;
 			esac
 			key="${keys[$i]}"
 			WZ_ICON_WARN=false
@@ -5777,7 +5918,7 @@ nb_wizard() {
 			next_title=$(printf '%s' "${titles[$((next - 1))]}" | sed 's/[[:space:]]*$//')
 			echo -e "推荐下一步: ${gl_huang}${next}. ${next_title}${gl_bai}"
 		else
-			echo -e "${gl_lv}必做步骤已全部完成${gl_bai}，可按需部署 19-21 项应用"
+			echo -e "${gl_lv}必做步骤已全部完成${gl_bai}，可按需部署 20-22 项应用"
 		fi
 		echo "------------------------------------------------"
 		echo "n. 执行推荐的下一步          r. 清除执行记录"
@@ -6101,6 +6242,7 @@ linux_Settings() {
 	  echo -e "${gl_cyan}26.  ${gl_bai}TG-bot系统监控预警                 ${gl_cyan}27.  ${gl_bai}命令行美化工具 ${gl_huang}★${gl_bai}"
 	  echo -e "${gl_cyan}28.  ${gl_bai}系统备份与恢复                     ${gl_cyan}29.  ${gl_bai}硬盘分区管理工具"
 	  echo -e "${gl_cyan}30.  ${gl_bai}命令行历史记录                     ${gl_cyan}31.  ${gl_bai}系统日志管理工具 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}32.  ${gl_bai}自动安装安全更新"
 	  echo -e "${gl_cyan}------------------------"
 	  echo -e "${gl_cyan}99.  ${gl_bai}重启服务器                         ${gl_cyan}101. ${gl_bai}命令行用法 ${gl_huang}★${gl_bai}"
 	  echo -e "${gl_cyan}102. ${gl_bai}卸载 Nimbus"
@@ -6561,6 +6703,10 @@ EOF
 			  log_menu
 			  ;;
 
+		  32)
+			  nb_security_updates
+			  ;;
+
 		  23)
 			  clear
 			  env_menu
@@ -6798,6 +6944,7 @@ echo "-------------------"
 echo "以下是 nb 命令参考用例："
 echo "启动脚本            nb"
 echo "新机开荒            nb init | nb 开荒"
+echo "自动安装安全更新    nb secupdate | nb 安全更新"
 echo "安装软件包          nb install nano wget | nb add nano wget | nb 安装 nano wget"
 echo "卸载软件包          nb remove nano wget | nb del nano wget | nb uninstall nano wget | nb 卸载 nano wget"
 echo "更新系统            nb update | nb 更新"
@@ -6857,6 +7004,9 @@ else
 			;;
 		init|开荒|新机)
 			nb_wizard
+			;;
+		secupdate|安全更新)
+			nb_security_updates
 			;;
 		bbr3|bbrv3)
 			bbrv3
