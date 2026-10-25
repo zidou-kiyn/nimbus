@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.0.1"
+sh_v="1.1.0"
 
 
 gl_hui='\e[37m'
@@ -52,9 +52,51 @@ canshu_v6() {
 
 canshu_v6
 
-cp -f ./nimbus.sh ~/nimbus.sh > /dev/null 2>&1
-cp -f ~/nimbus.sh /usr/local/bin/nb > /dev/null 2>&1
-ln -sf /usr/local/bin/nb /usr/bin/nb > /dev/null 2>&1
+# 内容不同才替换；先写临时文件再 mv，避免改写正在执行的脚本
+nb_atomic_copy() {
+	local src="$1" dst="$2"
+	cmp -s "$src" "$dst" 2>/dev/null && return 0
+	cp -f "$src" "$dst.nbtmp.$$" 2>/dev/null || return 1
+	chmod 755 "$dst.nbtmp.$$" 2>/dev/null
+	mv -f "$dst.nbtmp.$$" "$dst" 2>/dev/null || { rm -f "$dst.nbtmp.$$"; return 1; }
+}
+
+# 安装 ~/nimbus.sh 与快捷命令 nb
+# - 从文件运行（nb / ./nimbus.sh）：复制自身
+# - 通过 bash <(curl ...) 运行：磁盘上没有脚本文件，下载一份；直连失败则走镜像并切换为 CN 模式
+nimbus_self_install() {
+	local src tmp url had_nb=false
+	local raw_url="https://raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh"
+	[ -x /usr/local/bin/nb ] && had_nb=true
+	src=$(readlink -f "$0" 2>/dev/null)
+
+	if [ -f "$src" ] && grep -q '^sh_v=' "$src" 2>/dev/null; then
+		[ "$src" = "$(readlink -f ~/nimbus.sh 2>/dev/null)" ] || nb_atomic_copy "$src" ~/nimbus.sh
+	elif ! grep -q "^sh_v=\"$sh_v\"" ~/nimbus.sh 2>/dev/null; then
+		tmp=$(mktemp 2>/dev/null) || return 0
+		for url in "$raw_url" "${gh_proxy_mirror}${raw_url}"; do
+			if curl -fsSL --connect-timeout 5 -m 60 -o "$tmp" "$url" 2>/dev/null && head -1 "$tmp" | grep -q '^#!/bin/bash' && grep -q '^sh_v=' "$tmp"; then
+				if [ "$url" != "$raw_url" ]; then
+					sed -i 's/^canshu="default"/canshu="CN"/' "$tmp"
+					canshu="CN"
+					quanju_canshu
+				fi
+				nb_atomic_copy "$tmp" ~/nimbus.sh
+				break
+			fi
+		done
+		rm -f "$tmp"
+	fi
+
+	[ -f ~/nimbus.sh ] || return 0
+	chmod +x ~/nimbus.sh 2>/dev/null
+	if [ "$EUID" -eq 0 ]; then
+		nb_atomic_copy ~/nimbus.sh /usr/local/bin/nb
+		[ "$(readlink -f /usr/bin/nb 2>/dev/null)" = /usr/local/bin/nb ] || ln -sf /usr/local/bin/nb /usr/bin/nb 2>/dev/null
+		[ "$had_nb" = false ] && [ -x /usr/local/bin/nb ] && NB_FIRST_INSTALL=true
+	fi
+}
+nimbus_self_install
 
 
 
@@ -1323,6 +1365,27 @@ check_f2b_status() {
 	fi
 }
 
+# 把 sshd 实际监听的端口同步到 fail2ban 的 sshd jail（默认 port = ssh 只对 22 端口生效）
+f2b_sync_ssh_port() {
+	command -v fail2ban-client >/dev/null 2>&1 || return 0
+	local conf="/etc/fail2ban/jail.d/sshd.local" ports jail="sshd"
+	ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | sort -un | paste -sd, -)
+	[ -n "$ports" ] || ports=$(grep -E '^[[:space:]]*Port[[:space:]]+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | sort -un | paste -sd, -)
+	[ -n "$ports" ] || ports=22
+	mkdir -p /etc/fail2ban/jail.d
+	if [ ! -f "$conf" ]; then
+		grep -qi 'Alpine' /etc/issue 2>/dev/null && [ -f /etc/fail2ban/filter.d/alpine-sshd.conf ] && jail="alpine-sshd"
+		printf '[%s]\n# Managed by nimbus\nenabled = true\n' "$jail" > "$conf"
+	fi
+	if grep -qE '^[[:space:]]*port[[:space:]]*=' "$conf"; then
+		sed -i -E "s/^[[:space:]]*port[[:space:]]*=.*/port = ${ports}/" "$conf"
+	else
+		sed -i "0,/^\[.*\]/ s//&\nport = ${ports}/" "$conf"
+	fi
+	fail2ban-client reload >/dev/null 2>&1 || true
+	echo -e "fail2ban 已同步 SSH 端口: ${gl_huang}${ports}${gl_bai}"
+}
+
 f2b_install_sshd() {
 
 	docker rm -f fail2ban >/dev/null 2>&1
@@ -1345,6 +1408,11 @@ f2b_install_sshd() {
 	if command -v apt &>/dev/null; then
 		install rsyslog || return 1
 		/bin/systemctl enable --now rsyslog.service || return 1
+		# rsyslog 收到第一条认证日志前不会创建 auth.log，fail2ban（Debian 12 按文件读取）会因找不到日志而启动失败
+		if [ ! -e /var/log/auth.log ]; then
+			touch /var/log/auth.log && chmod 0640 /var/log/auth.log
+			chown root:adm /var/log/auth.log 2>/dev/null || true
+		fi
 	fi
 
 	if command -v apk >/dev/null 2>&1; then
@@ -1361,6 +1429,7 @@ f2b_install_sshd() {
 			/bin/systemctl restart fail2ban.service || return 1
 		fi
 	fi
+	f2b_sync_ssh_port
 
 }
 
@@ -1426,6 +1495,7 @@ EOF
 	fi
 
 	echo -e "${gl_lv}已写入配置${gl_bai}: /etc/fail2ban/jail.d/sshd.local"
+	f2b_sync_ssh_port
 	fail2ban-client reload >/dev/null 2>&1 || true
 	sleep 2
 	fail2ban-client status $jail_name || true
@@ -2084,301 +2154,180 @@ clear
 
 
 dd_xitong() {
-		dd_xitong_MollyLau() {
-			wget --no-check-certificate -qO InstallNET.sh "${gh_proxy}raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh" && chmod a+x InstallNET.sh
+	root_use
+	local choice sys ver label raid_ok pwd pwd2 port raid disks disk_list confirm
+	local installer="/root/InstallNET.sh"
+	local -a args
 
-		}
+	while true; do
+		clear
+		echo "一键重装系统"
+		echo "------------------------------------------------"
+		echo "使用 InstallNET 通过官方网络安装器重装原版系统，可自定义 root 密码、SSH 端口和软 RAID"
+		echo -e "${gl_hong}注意: 将清空硬盘上的全部数据！${gl_bai}重装约需 10~30 分钟，期间无法连接，请提前备份"
+		echo -e "${gl_hui}脚本来源: https://github.com/leitbogioro/Tools${gl_bai}"
+		echo "------------------------"
+		echo "1. Debian 13 ★                2. Debian 12"
+		echo "3. Ubuntu 24.04               4. Ubuntu 22.04"
+		echo "5. AlmaLinux 9                6. Rocky Linux 9"
+		echo "7. Alpine Linux (edge)"
+		echo "------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------"
+		read -r -e -p "请选择要重装的系统: " choice
+		raid_ok=false
+		case "$choice" in
+			1) sys="-debian"; ver="13"; label="Debian 13"; raid_ok=true ;;
+			2) sys="-debian"; ver="12"; label="Debian 12"; raid_ok=true ;;
+			3) sys="-ubuntu"; ver="24.04"; label="Ubuntu 24.04" ;;
+			4) sys="-ubuntu"; ver="22.04"; label="Ubuntu 22.04" ;;
+			5) sys="-almalinux"; ver="9"; label="AlmaLinux 9"; raid_ok=true ;;
+			6) sys="-rockylinux"; ver="9"; label="Rocky Linux 9"; raid_ok=true ;;
+			7) sys="-alpine"; ver="edge"; label="Alpine Linux edge" ;;
+			0) return ;;
+			*) continue ;;
+		esac
+		break
+	done
 
-		dd_xitong_bin456789() {
-			curl -O ${gh_proxy}raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh
-		}
+	echo ""
+	echo -e "${gl_cyan}重装为 ${label}${gl_bai}"
+	echo "------------------------"
 
-		dd_xitong_1() {
-		  echo -e "重装后初始用户名: ${gl_huang}root${gl_bai}  初始密码: ${gl_huang}LeitboGi0ro${gl_bai}  初始端口: ${gl_huang}22${gl_bai}"
-		  echo -e "${gl_huang}重装后请及时修改初始密码，防止暴力入侵。命令行输入passwd修改密码${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  install wget
-		  dd_xitong_MollyLau
-		}
-
-		dd_xitong_2() {
-		  echo -e "重装后初始用户名: ${gl_huang}Administrator${gl_bai}  初始密码: ${gl_huang}Teddysun.com${gl_bai}  初始端口: ${gl_huang}3389${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  install wget
-		  dd_xitong_MollyLau
-		}
-
-		dd_xitong_3() {
-		  echo -e "重装后初始用户名: ${gl_huang}root${gl_bai}  初始密码: ${gl_huang}123@@@${gl_bai}  初始端口: ${gl_huang}22${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  dd_xitong_bin456789
-		}
-
-		dd_xitong_4() {
-		  echo -e "重装后初始用户名: ${gl_huang}Administrator${gl_bai}  初始密码: ${gl_huang}123@@@${gl_bai}  初始端口: ${gl_huang}3389${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  dd_xitong_bin456789
-		}
-
-		  while true; do
-			root_use
-			echo "重装系统"
-			echo "--------------------------------"
-			echo -e "${gl_hong}注意: ${gl_bai}重装有风险失联，不放心者慎用。重装预计花费15分钟，请提前备份数据。"
-			echo -e "${gl_hui}感谢bin456789大佬和leitbogioro大佬的脚本支持！${gl_bai} "
-			echo -e "${gl_hui}bin456789项目地址: ${gh_https_url}github.com/bin456789/reinstall${gl_bai}"
-			echo -e "${gl_hui}leitbogioro项目地址: ${gh_https_url}github.com/leitbogioro/Tools${gl_bai}"
-			echo "------------------------"
-			echo "1. Debian 13                  2. Debian 12"
-			echo "3. Debian 11                  4. Debian 10"
-			echo "------------------------"
-			echo "11. Ubuntu 26.04              12. Ubuntu 24.04"
-			echo "13. Ubuntu 22.04              14. Ubuntu 20.04"
-			echo "------------------------"
-			echo "21. Rocky Linux 10            22. Rocky Linux 9"
-			echo "23. Alma Linux 10             24. Alma Linux 9"
-			echo "25. oracle Linux 10           26. oracle Linux 9"
-			echo "27. Fedora Linux 44           28. Fedora Linux 43"
-			echo "29. CentOS 10                 30. CentOS 9"
-			echo "------------------------"
-			echo "31. Alpine Linux              32. Arch Linux"
-			echo "33. Kali Linux                34. openEuler"
-			echo "35. openSUSE Tumbleweed       36. fnos飞牛公测版"
-			echo "------------------------"
-			echo "41. Windows 11                42. Windows 10"
-			echo "43. Windows 7                 44. Windows Server 2025"
-			echo "45. Windows Server 2022       46. Windows Server 2019"
-			echo "47. Windows 11 ARM"
-			echo "------------------------"
-			echo "0. 返回上一级选单"
-			echo "------------------------"
-			read -e -p "请选择要重装的系统: " sys_choice
-			case "$sys_choice" in
-
-
-			  1)
-				dd_xitong_3
-				bash reinstall.sh debian 13
-				reboot
-				exit
-				;;
-
-			  2)
-				dd_xitong_3
-				bash reinstall.sh debian 12
-				reboot
-				exit
-				;;
-			  3)
-				dd_xitong_3
-				bash reinstall.sh debian 11
-				reboot
-				exit
-				;;
-			  4)
-				dd_xitong_3
-				bash reinstall.sh debian 10
-				reboot
-				exit
-				;;
-			  11)
-				dd_xitong_3
-				bash reinstall.sh ubuntu 26.04
-				reboot
-				exit
-				;;
-			  12)
-				dd_xitong_3
-				bash reinstall.sh ubuntu 24.04
-				reboot
-				exit
-				;;
-			  13)
-				dd_xitong_3
-				bash reinstall.sh ubuntu 22.04
-				reboot
-				exit
-				;;
-			  14)
-				dd_xitong_3
-				bash reinstall.sh ubuntu 20.04
-				reboot
-				exit
-				;;
-
-			  21)
-				dd_xitong_3
-				bash reinstall.sh rocky
-				reboot
-				exit
-				;;
-
-			  22)
-				dd_xitong_3
-				bash reinstall.sh rocky 9
-				reboot
-				exit
-				;;
-
-			  23)
-				dd_xitong_3
-				bash reinstall.sh almalinux
-				reboot
-				exit
-				;;
-
-			  24)
-				dd_xitong_3
-				bash reinstall.sh almalinux 9
-				reboot
-				exit
-				;;
-
-			  25)
-				dd_xitong_3
-				bash reinstall.sh oracle
-				reboot
-				exit
-				;;
-
-			  26)
-				dd_xitong_3
-				bash reinstall.sh oracle 9
-				reboot
-				exit
-				;;
-
-			  27)
-				dd_xitong_3
-				bash reinstall.sh fedora 44
-				reboot
-				exit
-				;;
-
-			  28)
-				dd_xitong_3
-				bash reinstall.sh fedora 43
-				reboot
-				exit
-				;;
-
-			  29)
-				dd_xitong_3
-				bash reinstall.sh centos 10
-				reboot
-				exit
-				;;
-
-			  30)
-				dd_xitong_3
-				bash reinstall.sh centos 9
-				reboot
-				exit
-				;;
-
-			  31)
-				dd_xitong_1
-				bash InstallNET.sh -alpine
-				reboot
-				exit
-				;;
-
-			  32)
-				dd_xitong_3
-				bash reinstall.sh arch
-				reboot
-				exit
-				;;
-
-			  33)
-				dd_xitong_3
-				bash reinstall.sh kali
-				reboot
-				exit
-				;;
-
-			  34)
-				dd_xitong_3
-				bash reinstall.sh openeuler
-				reboot
-				exit
-				;;
-
-			  35)
-				dd_xitong_3
-				bash reinstall.sh opensuse
-				reboot
-				exit
-				;;
-
-			  36)
-				dd_xitong_3
-				bash reinstall.sh fnos
-				reboot
-				exit
-				;;
-
-			  41)
-				dd_xitong_2
-				bash InstallNET.sh -windows 11 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  42)
-				dd_xitong_2
-				bash InstallNET.sh -windows 10 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  43)
-				dd_xitong_4
-				bash reinstall.sh windows --iso="https://archive.org/download/en_windows_7_professional_with_sp1_x64_dvd_u_676939_201906/en_windows_7_professional_with_sp1_x64_dvd_u_676939.iso" --image-name='windows 7 professional'
-				reboot
-				exit
-				;;
-
-			  44)
-				dd_xitong_2
-				bash InstallNET.sh -windows 2025 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  45)
-				dd_xitong_2
-				bash InstallNET.sh -windows 2022 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  46)
-				dd_xitong_2
-				bash InstallNET.sh -windows 2019 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  47)
-				dd_xitong_4
-				bash reinstall.sh dd --img https://r2.hotdog.eu.org/win11-arm-with-pagefile-15g.xz
-				reboot
-				exit
-				;;
-
-			  *)
+	# root 密码（InstallNET 未对密码加引号，仅允许安全字符）
+	if [ "$sys" = "-alpine" ]; then
+		pwd="LeitboGi0ro"
+		echo -e "Alpine 不支持自定义密码，初始 root 密码固定为: ${gl_huang}${pwd}${gl_bai}"
+	else
+		while true; do
+			read -r -s -p "设置 root 密码（直接回车随机生成）: " pwd
+			echo ""
+			if [ -z "$pwd" ]; then
+				pwd=$(tr -dc 'A-Za-z0-9' </dev/urandom 2>/dev/null | head -c 16)
+				echo -e "已生成随机密码: ${gl_huang}${pwd}${gl_bai}  ${gl_hong}请务必记下${gl_bai}"
 				break
-				;;
-			esac
-		  done
+			fi
+			if ! [[ "$pwd" =~ ^[A-Za-z0-9@#%+=:,._-]{6,64}$ ]]; then
+				echo -e "${gl_hong}密码需为 6-64 位，仅可包含字母、数字和 @ # % + = : , . _ -${gl_bai}"
+				continue
+			fi
+			read -r -s -p "再次输入确认: " pwd2
+			echo ""
+			[ "$pwd" = "$pwd2" ] || { echo -e "${gl_hong}两次输入不一致${gl_bai}"; continue; }
+			if [ "${#pwd}" -lt 12 ] || [[ "$pwd" =~ ^[0-9]+$ ]]; then
+				echo -e "${gl_huang}这是弱密码，仅适合临时使用，重装后请立即修改（新机开荒第 2 步）${gl_bai}"
+			fi
+			break
+		done
+	fi
+
+	# SSH 端口
+	while true; do
+		read -r -e -p "设置 SSH 端口 [默认 22]: " port
+		port=${port:-22}
+		[[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] && break
+		echo -e "${gl_hong}端口需为 1-65535 的数字${gl_bai}"
+	done
+
+	# 软 RAID（多块硬盘时可选）
+	raid=""
+	disk_list=$(lsblk -dn -o NAME,SIZE,TYPE,MODEL 2>/dev/null | awk '$3=="disk" && $1 !~ /^(loop|ram|zram|sr|fd)/')
+	disks=$(printf '%s\n' "$disk_list" | grep -c .)
+	if [ "$disks" -ge 2 ]; then
+		echo "------------------------"
+		echo "检测到 $disks 块硬盘:"
+		printf '%s\n' "$disk_list" | sed 's/^/  /'
+		if [ "$raid_ok" = true ]; then
+			echo "软 RAID: 0. 不使用（默认）  1. RAID 0  2. RAID 1  3. RAID 5  4. RAID 6  5. RAID 10"
+			echo -e "${gl_hui}RAID 0 容量最大但任一硬盘损坏即丢失全部数据；RAID 1 镜像最安全；RAID 5 至少 3 块，RAID 6/10 至少 4 块${gl_bai}"
+			while true; do
+				read -r -e -p "请选择 [默认 0]: " choice
+				case "${choice:-0}" in
+					0) raid=""; break ;;
+					1) raid="0" ;;
+					2) raid="1" ;;
+					3) raid="5"; [ "$disks" -ge 3 ] || { echo "RAID 5 至少需要 3 块硬盘"; continue; } ;;
+					4) raid="6"; [ "$disks" -ge 4 ] || { echo "RAID 6 至少需要 4 块硬盘"; continue; } ;;
+					5) raid="10"; [ "$disks" -ge 4 ] || { echo "RAID 10 至少需要 4 块硬盘"; continue; } ;;
+					*) continue ;;
+				esac
+				break
+			done
+			if [ -n "$raid" ]; then
+				echo -e "${gl_huang}OVH 独服提示: 请先在 OVH 面板用官方模板、默认分区方式安装一次系统，再执行本重装，否则可能无法引导${gl_bai}"
+			fi
+		else
+			echo -e "${gl_hui}${label} 不支持 InstallNET 的软 RAID，将安装到单块硬盘${gl_bai}"
+		fi
+	fi
+
+	args=("$sys" "$ver")
+	[ "$sys" = "-alpine" ] || args+=(-pwd "$pwd")
+	args+=(-port "$port")
+	[ -n "$raid" ] && args+=(-raid "$raid")
+
+	echo ""
+	echo -e "${gl_cyan}确认重装信息${gl_bai}"
+	echo "------------------------"
+	echo "系统      : $label"
+	echo -e "root 密码 : ${gl_huang}${pwd}${gl_bai}"
+	echo "SSH 端口  : $port"
+	if [ -n "$raid" ]; then echo "软 RAID   : RAID $raid"; else echo "软 RAID   : 不使用"; fi
+	echo "执行命令  : bash InstallNET.sh ${args[*]}" | sed "s/-pwd [^ ]*/-pwd ******/"
+	echo "------------------------"
+	echo -e "${gl_hong}硬盘数据将被全部清除，且无法恢复！${gl_bai}"
+	read -r -e -p "确认重装请输入 yes: " confirm
+	[ "$confirm" = "yes" ] || { echo "已取消"; return 1; }
+
+	install curl wget
+	if ! curl -fsSL -m 60 -o "$installer" "${gh_proxy}raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh" ||
+		! head -1 "$installer" | grep -q '^#!/'; then
+		echo -e "${gl_hong}InstallNET.sh 下载失败，请检查网络后重试${gl_bai}"
+		return 1
+	fi
+	chmod +x "$installer"
+
+	if bash "$installer" "${args[@]}"; then
+		echo ""
+		echo -e "${gl_lv}安装环境已准备好，重启后开始重装${gl_bai}（可在服务商 VNC 中查看进度）"
+		echo -e "重装完成后用 ${gl_huang}root / 上面的密码 / 端口 ${port}${gl_bai} 登录"
+		server_reboot
+	else
+		echo -e "${gl_hong}InstallNET 执行失败，未重启。请根据上方输出排查${gl_bai}"
+		return 1
+	fi
 }
 
 
+
+# 是否为 Proxmox VE 宿主机
+nb_is_pve() {
+	command -v pveversion >/dev/null 2>&1 || [ -d /etc/pve ]
+}
+
+# 不更换内核，只开启当前内核自带的 BBR + fq
+nb_bbr_only() {
+	local reason="$1" choice
+	clear
+	echo "BBR 加速（不更换内核）"
+	echo "------------------------------------------------"
+	echo -e "$reason"
+	echo "将使用当前内核自带的 BBR 拥塞控制 + fq 队列，写入 /etc/sysctl.d/99-nimbus-bbr.conf"
+	echo "当前内核: $(uname -r)    当前算法: $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) / $(sysctl -n net.core.default_qdisc 2>/dev/null)"
+	echo "------------------------------------------------"
+	read -r -e -p "确定开启吗？(Y/N): " choice
+	case "$choice" in
+		[Yy]) ;;
+		*) echo "已取消"; return ;;
+	esac
+	modprobe tcp_bbr >/dev/null 2>&1
+	if ! sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
+		echo -e "${gl_hong}当前内核不支持 BBR（或容器内无权修改），未做更改${gl_bai}"
+		return 1
+	fi
+	bbr_on
+	echo -e "${gl_lv}已开启: $(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) / $(sysctl -n net.core.default_qdisc 2>/dev/null)，无需重启${gl_bai}"
+}
 
 bbrv3() {
 			  root_use
@@ -2522,23 +2471,25 @@ bbrv3() {
 		  }
 
 
-		  local cpu_arch=$(uname -m)
-		  if [ "$cpu_arch" != "x86_64" ]; then
-			echo "XanMod 内核仅支持 x86_64 架构，当前架构: $cpu_arch"
-			break_end
+		  local cpu_arch virt_c os_id=""
+		  cpu_arch=$(uname -m)
+		  if nb_is_pve; then
+			nb_bbr_only "检测到 ${gl_huang}Proxmox VE 宿主机${gl_bai}：不安装 XanMod。PVE 依赖自带的 proxmox-kernel（ZFS、KVM/LXC 支持随它发布），更换内核会失去官方支持"
 			return
 		  fi
-
-		  if [ -r /etc/os-release ]; then
-			. /etc/os-release
-			if [ "$ID" != "debian" ] && [ "$ID" != "ubuntu" ]; then
-				echo "当前环境不支持，仅支持Debian和Ubuntu系统"
-				break_end
-				return
-			fi
-		  else
-			echo "无法确定操作系统类型"
-			break_end
+		  virt_c=$(systemd-detect-virt -c 2>/dev/null)
+		  if [ -n "$virt_c" ] && [ "$virt_c" != "none" ]; then
+			nb_bbr_only "检测到容器环境（${virt_c}），无法更换内核"
+			return
+		  fi
+		  if [ "$cpu_arch" != "x86_64" ]; then
+			nb_bbr_only "XanMod 内核仅支持 x86_64，当前架构: $cpu_arch"
+			return
+		  fi
+		  # shellcheck source=/dev/null
+		  [ -r /etc/os-release ] && os_id=$(. /etc/os-release && echo "$ID")
+		  if [ "$os_id" != "debian" ] && [ "$os_id" != "ubuntu" ]; then
+			nb_bbr_only "XanMod 仅支持 Debian / Ubuntu，当前系统: ${os_id:-未知}"
 			return
 		  fi
 
@@ -2670,21 +2621,27 @@ done
 
 
 shell_bianse_profile() {
-
-if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
-	sed -i '/^PS1=/d' ~/.bashrc
-	echo "${bianse}" >> ~/.bashrc
-	# source ~/.bashrc
-else
-	sed -i '/^PS1=/d' ~/.profile
-	echo "${bianse}" >> ~/.profile
-	# source ~/.profile
-fi
-echo -e "${gl_lv}变更完成。重新连接SSH后可查看变化！${gl_bai}"
-
-hash -r
-break_end
-
+	# PS1 使用 bash 专有转义：放在 if [ -n "$BASH" ] 中，避免 dash 等 sh 登录时原样打印
+	local rc="$HOME/.profile"
+	if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
+		rc="$HOME/.bashrc"
+	fi
+	touch "$rc"
+	# 清理旧版直接写入的 PS1= 行和已有的 nimbus 配置块
+	sed -i -e '/^PS1=/d' -e '/^# >>> nimbus PS1 >>>$/,/^# <<< nimbus PS1 <<<$/d' "$rc"
+	if [ -n "$bianse" ]; then
+		{
+			echo '# >>> nimbus PS1 >>>'
+			# shellcheck disable=SC2016  # 有意写入字面量 $BASH
+			echo 'if [ -n "$BASH" ]; then'
+			echo "	${bianse}"
+			echo 'fi'
+			echo '# <<< nimbus PS1 <<<'
+		} >> "$rc"
+	fi
+	echo -e "${gl_lv}变更完成。重新连接SSH后可查看变化！${gl_bai}"
+	hash -r
+	break_end
 }
 
 
@@ -2698,7 +2655,7 @@ shell_bianse() {
 	echo -e "1. \033[1;32mroot \033[1;34mlocalhost \033[1;31m~ \033[0m${gl_bai}#"
 	echo -e "2. \033[1;35mroot \033[1;36mlocalhost \033[1;33m~ \033[0m${gl_bai}#"
 	echo -e "3. \033[1;31mroot \033[1;32mlocalhost \033[1;34m~ \033[0m${gl_bai}#"
-	echo -e "4. \033[1;36mroot \033[1;33mlocalhost \033[1;37m~ \033[0m${gl_bai}#"
+	echo -e "4. \033[1;36mroot \033[1;33mlocalhost \033[1;37m~ \033[0m${gl_bai}#  ${gl_huang}★${gl_bai}"
 	echo -e "5. \033[1;37mroot \033[1;31mlocalhost \033[1;32m~ \033[0m${gl_bai}#"
 	echo -e "6. \033[1;33mroot \033[1;34mlocalhost \033[1;35m~ \033[0m${gl_bai}#"
 	echo -e "7. root localhost ~ #"
@@ -3238,7 +3195,7 @@ linux_tools() {
 	  tools=(
 		curl wget sudo socat htop iftop unzip tar tmux ffmpeg
 		btop ranger ncdu fzf
-		vim nano git
+		vim nano git realm
 	  )
 
 	  if command -v apt >/dev/null 2>&1; then
@@ -3296,7 +3253,7 @@ linux_tools() {
 	  echo -e "${gl_cyan}11.  ${gl_bai}btop 现代化监控工具 ${gl_huang}★${gl_bai}             ${gl_cyan}12.  ${gl_bai}ranger 文件管理工具"
 	  echo -e "${gl_cyan}13.  ${gl_bai}ncdu 磁盘占用查看工具             ${gl_cyan}14.  ${gl_bai}fzf 全局搜索工具"
 	  echo -e "${gl_cyan}15.  ${gl_bai}vim 文本编辑器                    ${gl_cyan}16.  ${gl_bai}nano 文本编辑器 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_cyan}17.  ${gl_bai}git 版本控制系统"
+	  echo -e "${gl_cyan}17.  ${gl_bai}git 版本控制系统                  ${gl_cyan}18.  ${gl_bai}realm 端口转发（xwPF）"
 	  echo -e "${gl_cyan}------------------------"
 	  echo -e "${gl_cyan}31.  ${gl_bai}全部安装 ${gl_huang}★${gl_bai}                        ${gl_cyan}32.  ${gl_bai}全部卸载"
 	  echo -e "${gl_cyan}------------------------"
@@ -3431,6 +3388,11 @@ linux_tools() {
 			  clear
 			  git --help
 			  cd ~
+			  ;;
+
+			18)
+			  clear
+			  realm_xwpf
 			  ;;
 
 		  31)
@@ -5288,7 +5250,8 @@ tg_notify_install() {
 
 tg_notify_uninstall() {
 	local confirm
-	read -r -e -p "将停用并删除 TG-bot 监控预警的服务、sshrc 挂载、脚本和配置文件，确定继续吗？(Y/N): " confirm
+	echo "将停用并删除 TG-bot 监控预警的服务、sshrc 挂载、脚本和配置文件"
+	read -r -e -p "确定继续吗？(Y/N): " confirm
 	case "$confirm" in
 		[Yy]) ;;
 		*) echo "已取消"; return 1 ;;
@@ -5333,6 +5296,784 @@ tg_notify_menu() {
 			*) break ;;
 		esac
 	done
+}
+
+# ---------------------------------------------------------------------------
+# 通用：下载 GitHub 资源（依次尝试 gh_proxy / 直连 / 镜像），参数为不带协议的路径
+# ---------------------------------------------------------------------------
+nb_download() {
+	local path="$1" dest="$2" url tried=" "
+	for url in "${gh_proxy}${path}" "https://${path}" "${gh_proxy_mirror}https://${path}"; do
+		case "$tried" in *" $url "*) continue ;; esac
+		tried="$tried$url "
+		if curl -fsSL --connect-timeout 8 -m 120 -o "$dest" "$url" 2>/dev/null && [ -s "$dest" ]; then
+			return 0
+		fi
+	done
+	rm -f "$dest"
+	return 1
+}
+
+# 是否为国内服务器（CN 模式或 IP 归属地为 CN）
+nb_in_cn() {
+	[ "$canshu" = "CN" ] && return 0
+	[ "$(curl -s -m 3 ipinfo.io/country 2>/dev/null)" = "CN" ]
+}
+
+nb_service_active() {
+	command systemctl is-active --quiet "$1" 2>/dev/null && return 0
+	command -v rc-service >/dev/null 2>&1 && rc-service "$1" status >/dev/null 2>&1
+}
+
+# ---------------------------------------------------------------------------
+# tmux 及 Nimbus 推荐配置
+# ---------------------------------------------------------------------------
+tmux_setup() {
+	local conf="$HOME/.tmux.conf" tmp ver major minor choice bak
+	clear
+	echo "tmux 及推荐配置"
+	echo "------------------------------------------------"
+	echo "安装 tmux，并写入 Nimbus 推荐配置（鼠标、vi 复制模式、5 万行历史、OSC 52 剪贴板、Alt+拖动复制等）"
+	echo -e "${gl_hui}配置来源: res/config/tmux/tmux.conf${gl_bai}"
+	echo "------------------------------------------------"
+	install tmux || return 1
+	tmp=$(mktemp) || return 1
+	if ! nb_download raw.githubusercontent.com/zidou-kiyn/nimbus/main/res/config/tmux/tmux.conf "$tmp" || ! grep -q 'set -g mouse' "$tmp"; then
+		rm -f "$tmp"
+		echo -e "${gl_hong}配置文件下载失败${gl_bai}"
+		return 1
+	fi
+
+	ver=$(tmux -V 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
+	major=${ver%%.*}; minor=${ver#*.}
+	if [ -n "$ver" ] && { [ "${major:-0}" -lt 3 ] || { [ "$major" -eq 3 ] && [ "${minor:-0}" -lt 5 ]; }; }; then
+		sed -i '/extended-keys-format/d' "$tmp"
+		echo -e "${gl_hui}tmux $ver < 3.5，已去掉 extended-keys-format 选项${gl_bai}"
+	fi
+
+	if [ -f "$conf" ]; then
+		if cmp -s "$tmp" "$conf"; then
+			rm -f "$tmp"
+			echo -e "${gl_lv}tmux 配置已是最新，无需修改${gl_bai}"
+			return 0
+		fi
+		echo -e "${gl_huang}已存在 $conf，与推荐配置的差异如下（- 现有 / + 推荐）:${gl_bai}"
+		diff -u "$conf" "$tmp" | sed -n '3,200p' | grep -E '^[-+]' | head -40
+		echo "------------------------"
+		read -r -e -p "备份现有配置并替换吗？(Y/N): " choice
+		case "$choice" in
+			[Yy]) ;;
+			*) rm -f "$tmp"; echo "已取消，未修改"; return 0 ;;
+		esac
+		bak="$conf.bak.$(date +%Y%m%d-%H%M%S)"
+		cp -f "$conf" "$bak"
+		echo "已备份到 $bak"
+	fi
+	mv -f "$tmp" "$conf"
+	chmod 644 "$conf"
+	echo -e "${gl_lv}已写入 $conf${gl_bai}"
+	if tmux ls >/dev/null 2>&1; then
+		tmux source-file "$conf" && echo "已重新加载正在运行的 tmux"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# Komari 探针 Agent
+# ---------------------------------------------------------------------------
+komari_agent_menu() {
+	root_use
+	local choice endpoint key rotate use_mirror mirror tmp
+	local -a args
+	while true; do
+		clear
+		echo "Komari 探针 Agent"
+		echo "------------------------------------------------"
+		if nb_service_active komari-agent; then
+			echo -e "当前状态: ${gl_lv}运行中${gl_bai}"
+		elif [ -x /opt/komari/agent ]; then
+			echo -e "当前状态: ${gl_huang}已安装，未运行${gl_bai}"
+		else
+			echo -e "当前状态: ${gl_hui}未安装${gl_bai}"
+		fi
+		echo -e "${gl_hui}项目地址: https://github.com/komari-monitor/komari-agent${gl_bai}"
+		echo "------------------------------------------------"
+		echo "1. 安装 / 重新安装             2. 卸载"
+		echo "------------------------------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				while true; do
+					read -r -e -p "探针网址（如 https://komari.example.com）: " endpoint
+					[[ "$endpoint" =~ ^https?://[^[:space:]]+$ ]] && break
+					echo -e "${gl_hong}请输入以 http:// 或 https:// 开头的网址${gl_bai}"
+				done
+				endpoint=${endpoint%/}
+				while true; do
+					read -r -e -p "自动发现密钥（面板 设置 → 自动发现）: " key
+					[ -n "$key" ] && [[ "$key" != *[[:space:]]* ]] && break
+					echo -e "${gl_hong}密钥不能为空或包含空格${gl_bai}"
+				done
+				while true; do
+					read -r -e -p "月流量重置日（1-31，0 为不重置）[默认 1]: " rotate
+					rotate=${rotate:-1}
+					[[ "$rotate" =~ ^[0-9]+$ ]] && [ "$rotate" -le 31 ] && break
+				done
+				use_mirror=n
+				nb_in_cn && use_mirror=y
+				echo "国内机器建议通过 GitHub 加速镜像下载"
+				read -r -e -p "使用加速镜像？(y/n) [默认 $use_mirror]: " choice
+				use_mirror=${choice:-$use_mirror}
+				mirror=""
+				if [[ "$use_mirror" =~ ^[Yy]$ ]]; then
+					read -r -e -p "加速镜像地址 [默认 ${gh_proxy_mirror%/}]: " mirror
+					mirror=${mirror:-${gh_proxy_mirror%/}}
+					mirror=${mirror%/}
+				fi
+
+				args=(-e "$endpoint" --auto-discovery "$key" --disable-web-ssh --interval 5.0 --max-retries 5
+					--reconnect-interval 10 --info-report-interval 15 --month-rotate "$rotate")
+				[ -n "$mirror" ] && args+=(--install-ghproxy "$mirror")
+
+				echo "------------------------"
+				echo "探针网址: $endpoint"
+				echo "发现密钥: ${key:0:4}****"
+				echo "参数    : --disable-web-ssh --interval 5.0 --max-retries 5 --reconnect-interval 10 --info-report-interval 15 --month-rotate $rotate"
+				echo "加速镜像: ${mirror:-不使用（直连失败时安装脚本会自动尝试镜像）}"
+				echo "------------------------"
+				read -r -e -p "确认安装？(Y/N): " choice
+				[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; break_end; continue; }
+
+				install curl
+				tmp=$(mktemp)
+				if [ -n "$mirror" ]; then
+					curl -fsSL -m 60 -o "$tmp" "${mirror}/https://raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/install.sh" ||
+						nb_download raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/install.sh "$tmp"
+				else
+					nb_download raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/install.sh "$tmp"
+				fi
+				if [ -s "$tmp" ] && head -1 "$tmp" | grep -q '^#!'; then
+					bash "$tmp" "${args[@]}"
+				else
+					echo -e "${gl_hong}安装脚本下载失败${gl_bai}"
+				fi
+				rm -f "$tmp"
+				break_end
+				;;
+			2)
+				read -r -e -p "确定卸载 Komari Agent 吗？(Y/N): " choice
+				[[ "$choice" =~ ^[Yy]$ ]] || continue
+				if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/komari-agent.service ]; then
+					command systemctl disable --now komari-agent.service >/dev/null 2>&1
+					rm -f /etc/systemd/system/komari-agent.service
+					command systemctl daemon-reload
+				fi
+				if [ -f /etc/init.d/komari-agent ]; then
+					rc-service komari-agent stop >/dev/null 2>&1
+					rc-update del komari-agent default >/dev/null 2>&1
+					rm -f /etc/init.d/komari-agent
+				fi
+				rm -rf /opt/komari
+				echo -e "${gl_lv}Komari Agent 已卸载${gl_bai}"
+				break_end
+				;;
+			*) break ;;
+		esac
+	done
+}
+
+# ---------------------------------------------------------------------------
+# Realm 端口转发（zywe03/realm-xwPF，管理命令 pf）
+# ---------------------------------------------------------------------------
+realm_xwpf() {
+	root_use
+	local choice tmp
+	if command -v pf >/dev/null 2>&1; then
+		pf
+		return
+	fi
+	clear
+	echo "Realm 端口转发（xwPF）"
+	echo "------------------------------------------------"
+	echo "安装 realm 及 xwPF 管理脚本，安装后输入 pf 管理转发规则"
+	echo -e "${gl_hui}项目地址: https://github.com/zywe03/realm-xwPF${gl_bai}"
+	echo "------------------------------------------------"
+	read -r -e -p "确定安装吗？(Y/N): " choice
+	[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; return; }
+	install curl wget
+	tmp=$(mktemp)
+	if nb_download raw.githubusercontent.com/zywe03/realm-xwPF/main/xwPF.sh "$tmp" && head -1 "$tmp" | grep -q '^#!'; then
+		bash "$tmp" install
+	else
+		echo -e "${gl_hong}安装脚本下载失败${gl_bai}"
+	fi
+	rm -f "$tmp"
+	command -v pf >/dev/null 2>&1 && echo -e "${gl_lv}安装完成，以后输入 ${gl_huang}pf${gl_lv} 管理转发规则${gl_bai}"
+}
+
+# ---------------------------------------------------------------------------
+# XBoard-node 节点（cedar2025/xboard-node）
+# ---------------------------------------------------------------------------
+xboard_node_menu() {
+	root_use
+	local choice panel token node_id kernel installer="/root/xboard-node-install.sh"
+	xbn_fetch() {
+		if nb_download raw.githubusercontent.com/cedar2025/xboard-node/dev/install.sh "$installer" && head -1 "$installer" | grep -q '^#!'; then
+			return 0
+		fi
+		echo -e "${gl_hong}安装脚本下载失败${gl_bai}"
+		return 1
+	}
+	while true; do
+		clear
+		echo "XBoard-node 节点"
+		echo "------------------------------------------------"
+		if nb_service_active xboard-node; then
+			echo -e "当前状态: ${gl_lv}运行中${gl_bai}"
+		elif [ -f /etc/systemd/system/xboard-node.service ]; then
+			echo -e "当前状态: ${gl_huang}已安装，未运行${gl_bai}"
+		else
+			echo -e "当前状态: ${gl_hui}未安装${gl_bai}"
+		fi
+		echo -e "${gl_hui}项目地址: https://github.com/cedar2025/xboard-node（dev 分支安装脚本）${gl_bai}"
+		echo "------------------------------------------------"
+		echo "1. 安装 / 重新配置             2. 查看状态"
+		echo "3. 升级                        4. 卸载"
+		echo "------------------------------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				while true; do
+					read -r -e -p "面板网址（如 https://panel.example.com）: " panel
+					[[ "$panel" =~ ^https?://[^[:space:]]+$ ]] && break
+					echo -e "${gl_hong}请输入以 http:// 或 https:// 开头的网址${gl_bai}"
+				done
+				panel=${panel%/}
+				while true; do
+					read -r -s -p "通讯密钥 token（输入不显示）: " token
+					echo ""
+					[ -n "$token" ] && [[ "$token" != *[[:space:]]* ]] && break
+					echo -e "${gl_hong}token 不能为空或包含空格${gl_bai}"
+				done
+				while true; do
+					read -r -e -p "节点 ID: " node_id
+					[[ "$node_id" =~ ^[0-9]+$ ]] && break
+					echo -e "${gl_hong}节点 ID 应为数字${gl_bai}"
+				done
+				read -r -e -p "内核 1. xray（默认）  2. sing-box : " choice
+				case "$choice" in
+					2) kernel="singbox" ;;
+					*) kernel="xray" ;;
+				esac
+				echo "------------------------"
+				echo "面板: $panel    节点 ID: $node_id    内核: $kernel    token: ${token:0:4}****"
+				read -r -e -p "确认安装？(Y/N): " choice
+				[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; break_end; continue; }
+				install curl
+				xbn_fetch && bash "$installer" --mode node --panel "$panel" --token "$token" --node-id "$node_id" --kernel "$kernel"
+				break_end
+				;;
+			2) [ -f "$installer" ] || xbn_fetch; [ -f "$installer" ] && bash "$installer" status; break_end ;;
+			3) xbn_fetch && bash "$installer" upgrade; break_end ;;
+			4)
+				echo "卸载 XBoard-node：输入 Y 仅卸载程序；输入 purge 同时删除配置 /etc/xboard-node"
+				read -r -e -p "请输入 (Y/purge/N): " choice
+				case "$choice" in
+					purge) xbn_fetch && bash "$installer" uninstall --purge --yes ;;
+					[Yy]) xbn_fetch && bash "$installer" uninstall --yes ;;
+					*) echo "已取消" ;;
+				esac
+				break_end
+				;;
+			*) break ;;
+		esac
+	done
+}
+
+# ---------------------------------------------------------------------------
+# 新机开荒：把新机常用操作按推荐顺序集中到一个菜单，逐项执行
+# ---------------------------------------------------------------------------
+NB_WZ_STATE="/etc/nimbus/wizard.state"
+
+nb_wz_mark() {
+	mkdir -p /etc/nimbus 2>/dev/null || return 0
+	{ grep -v "^$1=" "$NB_WZ_STATE" 2>/dev/null; echo "$1=$(date +%s)"; } > "$NB_WZ_STATE.tmp" && mv -f "$NB_WZ_STATE.tmp" "$NB_WZ_STATE"
+}
+
+nb_wz_marked() {
+	local ts
+	ts=$(grep "^$1=" "$NB_WZ_STATE" 2>/dev/null | tail -1 | cut -d= -f2)
+	[ -n "$ts" ] && date -d "@$ts" '+%m-%d %H:%M' 2>/dev/null
+}
+
+nb_reboot_pending() {
+	[ -f /var/run/reboot-required ] && return 0
+	local latest
+	latest=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's#.*/vmlinuz-##' | sort -V | tail -1)
+	[ -n "$latest" ] && [ "$latest" != "$(uname -r)" ]
+}
+
+nb_sshd_opt() {
+	sshd -T 2>/dev/null | awk -v k="$1" '$1==k{print $2}' | paste -sd, -
+}
+
+# 设置 WZ_DONE / WZ_ICON / WZ_TEXT
+nb_wz_status() {
+	local key="$1" m v cc q
+	m=$(nb_wz_marked "$key")
+	WZ_DONE=false
+	WZ_TEXT=""
+	case "$key" in
+		dd)      WZ_TEXT="可自定义版本/密码/端口/RAID${m:+，上次 $m}" ;;
+		passwd)  [ -n "$m" ] && { WZ_DONE=true; WZ_TEXT="已修改 $m"; } || WZ_TEXT="DD 用了临时密码时请先改" ;;
+		update)  [ -n "$m" ] && { WZ_DONE=true; WZ_TEXT="已执行 $m"; } || WZ_TEXT="未执行" ;;
+		bbr)
+			cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null); q=$(sysctl -n net.core.default_qdisc 2>/dev/null)
+			if [ "$cc" = "bbr" ] && [ "$q" = "fq" ]; then
+				WZ_DONE=true; WZ_TEXT="bbr + fq"
+				uname -r | grep -qi xanmod && WZ_TEXT="$WZ_TEXT · XanMod"
+			elif uname -r | grep -qi xanmod || grep -qs 'bbr' /etc/sysctl.d/99-nimbus-bbr.conf; then
+				WZ_TEXT="已配置，重启后生效（当前 ${cc:-?} / ${q:-?}）"
+			else
+				WZ_TEXT="当前 ${cc:-?} / ${q:-?}"
+				nb_is_pve && WZ_TEXT="$WZ_TEXT（PVE: 仅开 BBR，不换内核）"
+			fi ;;
+		reboot)
+			if nb_reboot_pending; then WZ_ICON_WARN=true; WZ_TEXT="需要重启以启用新内核"
+			else [ -n "$m" ] && WZ_DONE=true; WZ_TEXT="内核 $(uname -r)"; fi ;;
+		tz)
+			v=$(timedatectl show -p Timezone --value 2>/dev/null)
+			[ -n "$v" ] || v=$(cat /etc/timezone 2>/dev/null)
+			[ -n "$v" ] || v=$(readlink /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##')
+			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="${v:-未知}" ;;
+		hostname)
+			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="$(uname -n)"
+			nb_is_pve && WZ_TEXT="$WZ_TEXT（PVE 不建议修改）" ;;
+		hosts)
+			if getent hosts "$(uname -n)" >/dev/null 2>&1; then WZ_DONE=true; WZ_TEXT="主机名可解析"; else WZ_TEXT="主机名无法解析"; fi ;;
+		swap)
+			v=$(awk '/^SwapTotal/{printf "%d", $2/1024}' /proc/meminfo 2>/dev/null)
+			[ -n "$m" ] && WZ_DONE=true
+			[ "${v:-0}" -gt 0 ] && WZ_TEXT="swap ${v}M" || WZ_TEXT="未设置 swap" ;;
+		dns)
+			v=$(awk '/^nameserver/{print $2}' /etc/resolv.conf 2>/dev/null | head -2 | paste -sd' ' -)
+			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="${v:-未知}" ;;
+		sshkey)
+			v=$(nb_sshd_opt passwordauthentication)
+			if [ "$v" = "no" ]; then WZ_DONE=true; WZ_TEXT="已禁用密码登录"; else WZ_TEXT="允许密码登录"; fi ;;
+		sshport)
+			v=$(nb_sshd_opt port)
+			[ -n "$v" ] || v=$(grep -E '^[[:space:]]*Port[[:space:]]+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | paste -sd, -)
+			v=${v:-22}
+			if [ "$v" != "22" ] || [ -n "$m" ]; then WZ_DONE=true; fi; WZ_TEXT="端口 $v" ;;
+		sudo)
+			v=$(nb_sshd_opt permitrootlogin)
+			if [ "$v" = "no" ]; then WZ_DONE=true; WZ_TEXT="root 已禁止登录"; else WZ_TEXT="生产机建议，普通机可跳过"; fi ;;
+		f2b)
+			if nb_service_active fail2ban; then WZ_DONE=true; WZ_TEXT="运行中"
+			elif command -v fail2ban-client >/dev/null 2>&1; then WZ_TEXT="已安装，未运行"
+			else WZ_TEXT="未安装"; fi ;;
+		tmux)
+			if command -v tmux >/dev/null 2>&1 && grep -qs 'Nimbus tmux' "$HOME/.tmux.conf"; then WZ_DONE=true; WZ_TEXT="已配置"
+			elif command -v tmux >/dev/null 2>&1; then WZ_TEXT="已安装，未写入推荐配置"
+			else WZ_TEXT="未安装"; fi ;;
+		tg)
+			if [ -f "$TG_NOTIFY_CONF" ] && { nb_service_active tg-check-notify || pgrep -f '^/bin/bash /root/TG-check-notify.sh' >/dev/null 2>&1; }; then WZ_DONE=true; WZ_TEXT="运行中"
+			elif [ -f "$TG_NOTIFY_CONF" ]; then WZ_TEXT="已配置，监控未运行"
+			else WZ_TEXT="未配置"; fi ;;
+		lang)
+			v=$(localectl status 2>/dev/null | awk -F= '/LANG=/{print $2; exit}')
+			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="${v:-${LANG:-未知}}" ;;
+		ps1)
+			if grep -qs '^# >>> nimbus PS1 >>>' "$HOME/.profile" "$HOME/.bashrc"; then WZ_DONE=true; WZ_TEXT="已设置"
+			elif grep -qs '^PS1=' "$HOME/.profile"; then WZ_TEXT="旧版设置，重新选择一次即可修复"
+			else WZ_TEXT="默认"; fi ;;
+		komari)
+			if nb_service_active komari-agent; then WZ_DONE=true; WZ_TEXT="运行中"; else WZ_TEXT="未安装"; fi ;;
+		realm)
+			if command -v pf >/dev/null 2>&1; then WZ_DONE=true; WZ_TEXT="已安装（命令 pf）"; else WZ_TEXT="未安装"; fi ;;
+		xboard)
+			if nb_service_active xboard-node; then WZ_DONE=true; WZ_TEXT="运行中"; else WZ_TEXT="未安装"; fi ;;
+	esac
+}
+
+nb_wz_passwd() {
+	root_use
+	echo "修改 root 密码"
+	echo "------------------------"
+	passwd root
+}
+
+nb_wz_reboot_check() {
+	local choice latest
+	while true; do
+		clear
+		echo "重启并检查内核"
+		echo "------------------------------------------------"
+		echo -e "当前内核  : ${gl_huang}$(uname -r)${gl_bai}"
+		echo -e "拥塞控制  : ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) / $(sysctl -n net.core.default_qdisc 2>/dev/null)${gl_bai}"
+		if nb_reboot_pending; then
+			latest=$(ls -1 /boot/vmlinuz-* 2>/dev/null | sed 's#.*/vmlinuz-##' | sort -V | tail -1)
+			echo -e "${gl_huang}检测到新内核 ${latest} 尚未启用，需要重启${gl_bai}"
+		else
+			echo -e "${gl_lv}当前已运行最新安装的内核${gl_bai}"
+		fi
+		echo -e "${gl_hui}重启后重新登录，输入 nb init 回到新机开荒继续${gl_bai}"
+		echo "------------------------------------------------"
+		echo "1. 立即重启                    2. 查看完整系统信息"
+		echo "------------------------------------------------"
+		echo "0. 返回"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) server_reboot ;;
+			2) linux_info; break_end ;;
+			*) break ;;
+		esac
+	done
+}
+
+nb_wizard() {
+	root_use
+	local choice next next_title i key
+	local -a keys=("dd" "passwd" "update" "bbr" "reboot" "tz" "hostname" "hosts" "swap" "dns" "sshkey" "sshport" "sudo" "f2b" "tmux" "tg" "lang" "ps1" "komari" "realm" "xboard")
+	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "TG-bot 监控预警                    " "切换系统语言（可选）               " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
+	local -a funcs=("dd_xitong" "nb_wz_passwd" "linux_update" "bbrv3" "nb_wz_reboot_check" "nb_timezone_menu" "nb_hostname_menu" "nb_hosts_menu" "nb_swap_menu" "set_dns_ui" "sshkey_panel" "nb_ssh_port_menu" "nb_create_sudo_user" "fail2ban_panel" "tmux_setup" "tg_notify_menu" "linux_language" "shell_bianse" "komari_agent_menu" "realm_xwpf" "xboard_node_menu")
+	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "0" "1" "0" "1" "1" "1")
+	while true; do
+		clear
+		echo -e "${gl_cyan}新机开荒${gl_bai} · 按推荐顺序逐项完成，可随时退出，回来后继续（nb init）"
+		echo -e "${gl_hui}✔ 已完成  ○ 待处理  ⚠ 需注意；标注「可选」的按需执行${gl_bai}"
+		next=""
+		for i in "${!keys[@]}"; do
+			case $((i + 1)) in
+				1) echo -e "${gl_cyan}【一 · 系统安装】${gl_bai}" ;;
+				2) echo -e "${gl_cyan}【二 · 基础与内核（装完新内核重启一次）】${gl_bai}" ;;
+				6) echo -e "${gl_cyan}【三 · 系统设置】${gl_bai}" ;;
+				11) echo -e "${gl_cyan}【四 · SSH 与账号安全】${gl_bai}" ;;
+				15) echo -e "${gl_cyan}【五 · 环境与监控】${gl_bai}" ;;
+				19) echo -e "${gl_cyan}【六 · 应用部署（按需）】${gl_bai}" ;;
+			esac
+			key="${keys[$i]}"
+			WZ_ICON_WARN=false
+			nb_wz_status "$key"
+			if [ "$WZ_ICON_WARN" = true ]; then
+				printf ' %b⚠%b ' "$gl_huang" "$gl_bai"
+			elif [ "$WZ_DONE" = true ]; then
+				printf ' %b✔%b ' "$gl_lv" "$gl_bai"
+			else
+				printf ' %b○%b ' "$gl_hui" "$gl_bai"
+			fi
+			printf '%b%-4s%b%s %b%s%b\n' "$gl_cyan" "$((i + 1))." "$gl_bai" "${titles[$i]}" "$gl_hui" "$WZ_TEXT" "$gl_bai"
+			if [ -z "$next" ] && [ "${opts[$i]}" != 1 ] && { [ "$WZ_DONE" != true ] || [ "$WZ_ICON_WARN" = true ]; }; then
+				next=$((i + 1))
+			fi
+		done
+		echo "------------------------------------------------"
+		if [ -n "$next" ]; then
+			next_title=$(printf '%s' "${titles[$((next - 1))]}" | sed 's/[[:space:]]*$//')
+			echo -e "推荐下一步: ${gl_huang}${next}. ${next_title}${gl_bai}"
+		else
+			echo -e "${gl_lv}必做步骤已全部完成${gl_bai}，可按需部署 19-21 项应用"
+		fi
+		echo "------------------------------------------------"
+		echo "n. 执行推荐的下一步          r. 清除执行记录"
+		echo "0. 返回主菜单"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入步骤编号: " choice
+		case "$choice" in
+			n|N) [ -n "$next" ] || continue; choice="$next" ;;
+			r|R) rm -f "$NB_WZ_STATE"; continue ;;
+			0|"") break ;;
+		esac
+		if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#keys[@]}" ]; then
+			clear
+			"${funcs[$((choice - 1))]}"
+			nb_wz_mark "${keys[$((choice - 1))]}"
+			break_end
+		fi
+	done
+}
+
+# ---- 系统工具：可被新机开荒复用的功能 ----
+nb_ssh_port_menu() {
+	root_use
+
+	while true; do
+		clear
+		sed -i 's/^\s*#\?\s*Port/Port/' /etc/ssh/sshd_config
+
+		# 读取当前的 SSH 端口号
+		local current_port=$(grep -E '^ *Port [0-9]+' /etc/ssh/sshd_config | awk '{print $2}')
+
+		# 打印当前的 SSH 端口号
+		echo -e "当前的 SSH 端口号是:  ${gl_huang}$current_port ${gl_bai}"
+
+		echo "------------------------"
+		echo "端口号范围1到65535之间的数字。（输入0退出）"
+
+		# 提示用户输入新的 SSH 端口号
+		read -e -p "请输入新的 SSH 端口号: " new_port
+
+		# 判断端口号是否在有效范围内
+		if [[ $new_port =~ ^[0-9]+$ ]]; then  # 检查输入是否为数字
+			if [[ $new_port -ge 1 && $new_port -le 65535 ]]; then
+				if new_ssh_port "$new_port"; then
+					f2b_sync_ssh_port
+					echo -e "${gl_huang}请保持当前会话，新开终端用端口 $new_port 测试登录成功后再断开${gl_bai}"
+					break
+				fi
+				break_end
+			elif [[ $new_port -eq 0 ]]; then
+				break
+			else
+				echo "端口号无效，请输入1到65535之间的数字。"
+				break_end
+			fi
+		else
+			echo "输入无效，请输入数字。"
+			break_end
+		fi
+	done
+}
+
+nb_create_sudo_user() {
+	root_use
+	echo "新建 sudo 用户并禁用 root"
+	echo "------------------------"
+	echo "1. 创建新用户（需导入该用户的 SSH 公钥），加入 sudo 且免密码"
+	echo "2. 公钥导入成功后：锁定 root 密码、禁止 root 通过 SSH 登录，并重启 sshd"
+	echo -e "${gl_huang}完成后请先新开一个终端，用新用户登录并执行 sudo -i 验证，确认无误再关闭当前会话${gl_bai}"
+	echo "------------------------"
+	read -e -p "请输入新用户名（输入0退出）: " new_username
+	if [ -z "$new_username" ] || [ "$new_username" == "0" ]; then
+		return
+	fi
+
+	create_user_with_sshkey "$new_username" true || return 1
+
+	if ssh-keygen -l -f "/home/$new_username/.ssh/authorized_keys" &>/dev/null; then
+		passwd -l root &>/dev/null
+		sed -i 's/^[[:space:]]*#\?[[:space:]]*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+		grep -q '^PermitRootLogin' /etc/ssh/sshd_config || echo 'PermitRootLogin no' >> /etc/ssh/sshd_config
+		restart_ssh
+		echo -e "${gl_lv}已禁用 root 登录，请使用 ${new_username} 登录后通过 sudo 管理${gl_bai}"
+	else
+		echo -e "${gl_huang}未检测到有效公钥，root 保持可用${gl_bai}"
+	fi
+}
+
+nb_swap_menu() {
+	root_use
+	while true; do
+		clear
+		echo "设置虚拟内存"
+		local swap_used=$(free -m | awk 'NR==3{print $3}')
+		local swap_total=$(free -m | awk 'NR==3{print $2}')
+		local swap_info=$(free -m | awk 'NR==3{used=$3; total=$2; if (total == 0) {percentage=0} else {percentage=used*100/total}; printf "%dM/%dM (%d%%)", used, total, percentage}')
+
+		echo -e "当前虚拟内存: ${gl_huang}$swap_info${gl_bai}"
+		echo "------------------------"
+		echo "1. 分配1024M         2. 分配2048M         3. 分配4096M         4. 自定义大小"
+		echo "------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " choice
+
+		case "$choice" in
+		  1)
+			add_swap 1024
+
+			;;
+		  2)
+			add_swap 2048
+
+			;;
+		  3)
+			add_swap 4096
+
+			;;
+
+		  4)
+			read -e -p "请输入虚拟内存大小（单位M）: " new_swap
+			add_swap "$new_swap"
+			;;
+
+		  *)
+			break
+			;;
+		esac
+	done
+}
+
+nb_timezone_menu() {
+	root_use
+	while true; do
+		clear
+		echo "系统时间信息"
+
+		# 获取当前系统时区
+		local timezone=$(current_timezone)
+
+		# 获取当前系统时间
+		local current_time=$(date +"%Y-%m-%d %H:%M:%S")
+
+		# 显示时区和时间
+		echo "当前系统时区：$timezone"
+		echo "当前系统时间：$current_time"
+
+		echo ""
+		echo "时区切换"
+		echo "------------------------"
+		echo "亚洲"
+		echo "1.  中国上海时间             2.  中国香港时间"
+		echo "3.  日本东京时间             4.  韩国首尔时间"
+		echo "5.  新加坡时间               6.  印度加尔各答时间"
+		echo "7.  阿联酋迪拜时间           8.  澳大利亚悉尼时间"
+		echo "9.  泰国曼谷时间"
+		echo "------------------------"
+		echo "欧洲"
+		echo "11. 英国伦敦时间             12. 法国巴黎时间"
+		echo "13. 德国柏林时间             14. 俄罗斯莫斯科时间"
+		echo "15. 荷兰尤特赖赫特时间       16. 西班牙马德里时间"
+		echo "------------------------"
+		echo "美洲"
+		echo "21. 美国西部时间             22. 美国东部时间"
+		echo "23. 加拿大时间               24. 墨西哥时间"
+		echo "25. 巴西时间                 26. 阿根廷时间"
+		echo "------------------------"
+		echo "31. UTC全球标准时间"
+		echo "------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " sub_choice
+
+
+		case $sub_choice in
+			1) set_timedate Asia/Shanghai ;;
+			2) set_timedate Asia/Hong_Kong ;;
+			3) set_timedate Asia/Tokyo ;;
+			4) set_timedate Asia/Seoul ;;
+			5) set_timedate Asia/Singapore ;;
+			6) set_timedate Asia/Kolkata ;;
+			7) set_timedate Asia/Dubai ;;
+			8) set_timedate Australia/Sydney ;;
+			9) set_timedate Asia/Bangkok ;;
+			11) set_timedate Europe/London ;;
+			12) set_timedate Europe/Paris ;;
+			13) set_timedate Europe/Berlin ;;
+			14) set_timedate Europe/Moscow ;;
+			15) set_timedate Europe/Amsterdam ;;
+			16) set_timedate Europe/Madrid ;;
+			21) set_timedate America/Los_Angeles ;;
+			22) set_timedate America/New_York ;;
+			23) set_timedate America/Vancouver ;;
+			24) set_timedate America/Mexico_City ;;
+			25) set_timedate America/Sao_Paulo ;;
+			26) set_timedate America/Argentina/Buenos_Aires ;;
+			31) set_timedate UTC ;;
+			*) break ;;
+		esac
+	done
+}
+
+# /etc/hosts 中把旧主机名替换为新主机名（整词匹配），并保证新主机名可解析
+nb_hosts_set_hostname() {
+	local old="$1" new="$2" old_re new_re tmp
+	[ -f /etc/hosts ] || touch /etc/hosts
+	cp -f /etc/hosts /etc/hosts.nbbak 2>/dev/null
+	tmp=$(mktemp) || return 1
+	cp -f /etc/hosts "$tmp"
+	if [ -n "$old" ] && [ "$old" != "localhost" ] && [ "$old" != "$new" ]; then
+		old_re=$(printf '%s' "$old" | sed 's/[.]/\\./g')
+		# 整词替换旧主机名，以及以旧主机名开头的 FQDN（oldhost.example.com -> newhost.example.com）
+		sed -i -E ":a; s/(^|[[:space:]])${old_re}(\.[^[:space:]]+)?([[:space:]]|$)/\1${new}\2\3/; ta" "$tmp"
+	fi
+	new_re=$(printf '%s' "$new" | sed 's/[.]/\\./g')
+	if ! grep -Eq "(^|[[:space:]])${new_re}([[:space:]]|$)" "$tmp"; then
+		if grep -q '^127\.0\.1\.1[[:space:]]' "$tmp"; then
+			sed -i "/^127\.0\.1\.1[[:space:]]/ s/\$/ ${new}/" "$tmp"
+		else
+			printf '127.0.1.1\t%s\n' "$new" >> "$tmp"
+		fi
+	fi
+	# 写回而不是替换文件：/etc/hosts 在容器中常为挂载点，不能被 rename
+	cat "$tmp" > /etc/hosts
+	rm -f "$tmp"
+}
+
+nb_hostname_menu() {
+	root_use
+	local current_hostname new_hostname choice
+	if nb_is_pve; then
+		echo -e "${gl_hong}警告: 当前是 Proxmox VE 宿主机${gl_bai}"
+		echo "PVE 的节点名与主机名绑定（/etc/pve/nodes/<主机名>），修改后 Web 界面、虚拟机配置可能异常，集群节点绝不能改"
+		echo "如确需修改，请先参考 PVE 官方文档迁移节点配置"
+		read -r -e -p "仍要继续修改吗？(y/N): " choice
+		[[ "$choice" =~ ^[Yy]$ ]] || return
+	fi
+
+	while true; do
+		clear
+		current_hostname=$(uname -n)
+		echo -e "当前主机名: ${gl_huang}$current_hostname${gl_bai}"
+		echo "------------------------"
+		read -r -e -p "请输入新的主机名（输入0退出）: " new_hostname
+		if [ -z "$new_hostname" ] || [ "$new_hostname" = "0" ]; then
+			echo "已退出，未更改主机名。"
+			break
+		fi
+		if ! [[ "$new_hostname" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,61}[A-Za-z0-9])?$ ]]; then
+			echo -e "${gl_hong}主机名只能包含字母、数字、点和连字符，且不能以符号开头或结尾${gl_bai}"
+			break_end
+			continue
+		fi
+		if [ -f /etc/alpine-release ] || ! command -v hostnamectl >/dev/null 2>&1; then
+			echo "$new_hostname" > /etc/hostname
+			hostname "$new_hostname"
+		else
+			hostnamectl set-hostname "$new_hostname"
+		fi
+		nb_hosts_set_hostname "$current_hostname" "$new_hostname"
+		echo -e "${gl_lv}主机名已更改为: $new_hostname${gl_bai}（/etc/hosts 已同步，原文件备份为 /etc/hosts.nbbak）"
+		break
+	done
+}
+
+nb_hosts_menu() {
+	  root_use
+	  while true; do
+		  clear
+		  echo "本机host解析列表"
+		  echo "如果你在这里添加解析匹配，将不再使用动态解析了"
+		  cat /etc/hosts
+		  echo ""
+		  echo "操作"
+		  echo "------------------------"
+		  echo "1. 添加新的解析              2. 删除解析地址"
+		  echo "------------------------"
+		  echo "0. 返回上一级选单"
+		  echo "------------------------"
+		  read -e -p "请输入你的选择: " host_dns
+
+		  case $host_dns in
+			  1)
+				  read -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost
+				  echo "$addhost" >> /etc/hosts
+
+				  ;;
+			  2)
+				  read -e -p "请输入需要删除的解析内容关键字: " delhost
+				  sed -i "/$delhost/d" /etc/hosts
+				  ;;
+			  *)
+				  break  # 跳出循环，退出菜单
+				  ;;
+		  esac
+	  done
 }
 
 linux_Settings() {
@@ -5387,43 +6128,8 @@ linux_Settings() {
 
 			  ;;
 		  8)
-			root_use
-
-			while true; do
-				clear
-				sed -i 's/^\s*#\?\s*Port/Port/' /etc/ssh/sshd_config
-
-				# 读取当前的 SSH 端口号
-				local current_port=$(grep -E '^ *Port [0-9]+' /etc/ssh/sshd_config | awk '{print $2}')
-
-				# 打印当前的 SSH 端口号
-				echo -e "当前的 SSH 端口号是:  ${gl_huang}$current_port ${gl_bai}"
-
-				echo "------------------------"
-				echo "端口号范围1到65535之间的数字。（输入0退出）"
-
-				# 提示用户输入新的 SSH 端口号
-				read -e -p "请输入新的 SSH 端口号: " new_port
-
-				# 判断端口号是否在有效范围内
-				if [[ $new_port =~ ^[0-9]+$ ]]; then  # 检查输入是否为数字
-					if [[ $new_port -ge 1 && $new_port -le 65535 ]]; then
-						new_ssh_port $new_port
-					elif [[ $new_port -eq 0 ]]; then
-						break
-					else
-						echo "端口号无效，请输入1到65535之间的数字。"
-						break_end
-					fi
-				else
-					echo "输入无效，请输入数字。"
-					break_end
-				fi
-			done
-
-
+			  nb_ssh_port_menu
 			  ;;
-
 
 		  9)
 			set_dns_ui
@@ -5434,22 +6140,8 @@ linux_Settings() {
 			dd_xitong
 			  ;;
 		  4)
-			root_use
-			read -e -p "请输入新用户名（输入0退出）: " new_username
-			if [ "$new_username" == "0" ]; then
-				break_end
-				linux_Settings
-			fi
-
-			create_user_with_sshkey $new_username true
-
-			ssh-keygen -l -f /home/$new_username/.ssh/authorized_keys &>/dev/null && {
-				passwd -l root &>/dev/null
-				sed -i 's/^[[:space:]]*#\?[[:space:]]*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-			}
-
-			;;
-
+			  nb_create_sudo_user
+			  ;;
 
 		  10)
 			root_use
@@ -5502,47 +6194,8 @@ linux_Settings() {
 			;;
 
 		  16)
-			root_use
-			while true; do
-				clear
-				echo "设置虚拟内存"
-				local swap_used=$(free -m | awk 'NR==3{print $3}')
-				local swap_total=$(free -m | awk 'NR==3{print $2}')
-				local swap_info=$(free -m | awk 'NR==3{used=$3; total=$2; if (total == 0) {percentage=0} else {percentage=used*100/total}; printf "%dM/%dM (%d%%)", used, total, percentage}')
-
-				echo -e "当前虚拟内存: ${gl_huang}$swap_info${gl_bai}"
-				echo "------------------------"
-				echo "1. 分配1024M         2. 分配2048M         3. 分配4096M         4. 自定义大小"
-				echo "------------------------"
-				echo "0. 返回上一级选单"
-				echo "------------------------"
-				read -e -p "请输入你的选择: " choice
-
-				case "$choice" in
-				  1)
-					add_swap 1024
-
-					;;
-				  2)
-					add_swap 2048
-
-					;;
-				  3)
-					add_swap 4096
-
-					;;
-
-				  4)
-					read -e -p "请输入虚拟内存大小（单位M）: " new_swap
-					add_swap "$new_swap"
-					;;
-
-				  *)
-					break
-					;;
-				esac
-			done
-			;;
+			  nb_swap_menu
+			  ;;
 
 		  5)
 			  while true; do
@@ -5669,74 +6322,7 @@ EOF
 			  ;;
 
 		  17)
-			root_use
-			while true; do
-				clear
-				echo "系统时间信息"
-
-				# 获取当前系统时区
-				local timezone=$(current_timezone)
-
-				# 获取当前系统时间
-				local current_time=$(date +"%Y-%m-%d %H:%M:%S")
-
-				# 显示时区和时间
-				echo "当前系统时区：$timezone"
-				echo "当前系统时间：$current_time"
-
-				echo ""
-				echo "时区切换"
-				echo "------------------------"
-				echo "亚洲"
-				echo "1.  中国上海时间             2.  中国香港时间"
-				echo "3.  日本东京时间             4.  韩国首尔时间"
-				echo "5.  新加坡时间               6.  印度加尔各答时间"
-				echo "7.  阿联酋迪拜时间           8.  澳大利亚悉尼时间"
-				echo "9.  泰国曼谷时间"
-				echo "------------------------"
-				echo "欧洲"
-				echo "11. 英国伦敦时间             12. 法国巴黎时间"
-				echo "13. 德国柏林时间             14. 俄罗斯莫斯科时间"
-				echo "15. 荷兰尤特赖赫特时间       16. 西班牙马德里时间"
-				echo "------------------------"
-				echo "美洲"
-				echo "21. 美国西部时间             22. 美国东部时间"
-				echo "23. 加拿大时间               24. 墨西哥时间"
-				echo "25. 巴西时间                 26. 阿根廷时间"
-				echo "------------------------"
-				echo "31. UTC全球标准时间"
-				echo "------------------------"
-				echo "0. 返回上一级选单"
-				echo "------------------------"
-				read -e -p "请输入你的选择: " sub_choice
-
-
-				case $sub_choice in
-					1) set_timedate Asia/Shanghai ;;
-					2) set_timedate Asia/Hong_Kong ;;
-					3) set_timedate Asia/Tokyo ;;
-					4) set_timedate Asia/Seoul ;;
-					5) set_timedate Asia/Singapore ;;
-					6) set_timedate Asia/Kolkata ;;
-					7) set_timedate Asia/Dubai ;;
-					8) set_timedate Australia/Sydney ;;
-					9) set_timedate Asia/Bangkok ;;
-					11) set_timedate Europe/London ;;
-					12) set_timedate Europe/Paris ;;
-					13) set_timedate Europe/Berlin ;;
-					14) set_timedate Europe/Moscow ;;
-					15) set_timedate Europe/Amsterdam ;;
-					16) set_timedate Europe/Madrid ;;
-					21) set_timedate America/Los_Angeles ;;
-					22) set_timedate America/New_York ;;
-					23) set_timedate America/Vancouver ;;
-					24) set_timedate America/Mexico_City ;;
-					25) set_timedate America/Sao_Paulo ;;
-					26) set_timedate America/Argentina/Buenos_Aires ;;
-					31) set_timedate UTC ;;
-					*) break ;;
-				esac
-			done
+			  nb_timezone_menu
 			  ;;
 
 		  18)
@@ -5750,45 +6336,7 @@ EOF
 			  ;;
 
 		  19)
-		  root_use
-
-		  while true; do
-			  clear
-			  local current_hostname=$(uname -n)
-			  echo -e "当前主机名: ${gl_huang}$current_hostname${gl_bai}"
-			  echo "------------------------"
-			  read -e -p "请输入新的主机名（输入0退出）: " new_hostname
-			  if [ -n "$new_hostname" ] && [ "$new_hostname" != "0" ]; then
-				  if [ -f /etc/alpine-release ]; then
-					  # Alpine
-					  echo "$new_hostname" > /etc/hostname
-					  hostname "$new_hostname"
-				  else
-					  # 其他系统，如 Debian, Ubuntu, CentOS 等
-					  hostnamectl set-hostname "$new_hostname"
-					  sed -i "s/$current_hostname/$new_hostname/g" /etc/hostname
-					  systemctl restart systemd-hostnamed
-				  fi
-
-				  if grep -q "127.0.0.1" /etc/hosts; then
-					  sed -i "s/127.0.0.1 .*/127.0.0.1       $new_hostname localhost localhost.localdomain/g" /etc/hosts
-				  else
-					  echo "127.0.0.1       $new_hostname localhost localhost.localdomain" >> /etc/hosts
-				  fi
-
-				  if grep -q "^::1" /etc/hosts; then
-					  sed -i "s/^::1 .*/::1             $new_hostname localhost localhost.localdomain ipv6-localhost ipv6-loopback/g" /etc/hosts
-				  else
-					  echo "::1             $new_hostname localhost localhost.localdomain ipv6-localhost ipv6-loopback" >> /etc/hosts
-				  fi
-
-				  echo "主机名已更改为: $new_hostname"
-				  sleep 1
-			  else
-				  echo "已退出，未更改主机名。"
-				  break
-			  fi
-		  done
+			  nb_hostname_menu
 			  ;;
 
 		  20)
@@ -5888,36 +6436,7 @@ EOF
 			  ;;
 
 		  13)
-			  root_use
-			  while true; do
-				  clear
-				  echo "本机host解析列表"
-				  echo "如果你在这里添加解析匹配，将不再使用动态解析了"
-				  cat /etc/hosts
-				  echo ""
-				  echo "操作"
-				  echo "------------------------"
-				  echo "1. 添加新的解析              2. 删除解析地址"
-				  echo "------------------------"
-				  echo "0. 返回上一级选单"
-				  echo "------------------------"
-				  read -e -p "请输入你的选择: " host_dns
-
-				  case $host_dns in
-					  1)
-						  read -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost
-						  echo "$addhost" >> /etc/hosts
-
-						  ;;
-					  2)
-						  read -e -p "请输入需要删除的解析内容关键字: " delhost
-						  sed -i "/$delhost/d" /etc/hosts
-						  ;;
-					  *)
-						  break  # 跳出循环，退出菜单
-						  ;;
-				  esac
-			  done
+			  nb_hosts_menu
 			  ;;
 
 		  24)
@@ -6232,6 +6751,12 @@ echo "║║║║║║║╠╩╗║ ║╚═╗"
 echo "╝╚╝╩╩ ╩╚═╝╚═╝╚═╝"
 echo -e "Nimbus · 云服务器工具箱 v$sh_v"
 echo -e "命令行输入${gl_huang}nb${gl_cyan}可快速启动${gl_bai}"
+if [ "$NB_FIRST_INSTALL" = true ]; then
+	echo -e "${gl_lv}已安装快捷命令 nb，脚本位于 ~/nimbus.sh${gl_bai}"
+	NB_FIRST_INSTALL=false
+elif [ "$EUID" -ne 0 ] && [ ! -x /usr/local/bin/nb ]; then
+	echo -e "${gl_huang}提示: 以 root 身份运行才会安装快捷命令 nb${gl_bai}"
+fi
 echo -e "${gl_cyan}------------------------${gl_bai}"
 echo -e "${gl_cyan}1.   ${gl_bai}系统信息查询"
 echo -e "${gl_cyan}2.   ${gl_bai}系统更新"
@@ -6241,6 +6766,7 @@ echo -e "${gl_cyan}5.   ${gl_bai}BBRv3加速"
 echo -e "${gl_cyan}6.   ${gl_bai}Docker管理"
 echo -e "${gl_cyan}7.   ${gl_bai}测试脚本合集"
 echo -e "${gl_cyan}8.   ${gl_bai}系统工具"
+echo -e "${gl_cyan}9.   ${gl_bai}新机开荒 ${gl_huang}★${gl_bai}"
 echo -e "${gl_cyan}------------------------${gl_bai}"
 echo -e "${gl_cyan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_cyan}------------------------${gl_bai}"
@@ -6257,6 +6783,7 @@ case $choice in
   6) linux_docker ;;
   7) linux_test ;;
   8) linux_Settings ;;
+  9) nb_wizard ;;
   00) nimbus_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
@@ -6270,6 +6797,7 @@ nb_help() {
 echo "-------------------"
 echo "以下是 nb 命令参考用例："
 echo "启动脚本            nb"
+echo "新机开荒            nb init | nb 开荒"
 echo "安装软件包          nb install nano wget | nb add nano wget | nb 安装 nano wget"
 echo "卸载软件包          nb remove nano wget | nb del nano wget | nb uninstall nano wget | nb 卸载 nano wget"
 echo "更新系统            nb update | nb 更新"
@@ -6326,6 +6854,9 @@ else
 			;;
 		dd|重装)
 			dd_xitong
+			;;
+		init|开荒|新机)
+			nb_wizard
 			;;
 		bbr3|bbrv3)
 			bbrv3
