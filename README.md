@@ -1,44 +1,18 @@
-<p align="center">
-  <img src="https://kejilion.sh/kejilionsh_logo.webp?v=2" alt="KEJILION.SH 科技lion一键脚本工具" width="620">
-</p>
-
-<h1 align="center">KEJILION.SH · 科技lion一键脚本工具</h1>
+<h1 align="center">kejilion.sh（精简版）</h1>
 
 <p align="center">
-  面向 Linux 服务器的综合脚本工具箱，集成系统管理、网络测试、Docker、LDNMP 建站、
-  应用市场、备份迁移与安全防护。
+  面向 Linux 服务器的脚本工具箱，fork 自
+  <a href="https://github.com/kejilion/sh">kejilion/sh</a>，去除遥测与外部依赖后精简维护。
 </p>
 
 <p align="center">
-  <a href="https://github.com/zidou-kiyn/sh/stargazers"><img src="https://img.shields.io/github/stars/zidou-kiyn/sh?style=flat-square" alt="GitHub Stars"></a>
-  <a href="https://github.com/zidou-kiyn/sh/network/members"><img src="https://img.shields.io/github/forks/zidou-kiyn/sh?style=flat-square" alt="GitHub Forks"></a>
   <a href="https://github.com/zidou-kiyn/sh/commits/main"><img src="https://img.shields.io/github/last-commit/zidou-kiyn/sh?style=flat-square" alt="Last Commit"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square" alt="Apache-2.0 License"></a>
 </p>
 
-<p align="center">
-  <a href="#介绍">介绍</a> ·
-  <a href="#一键安装">一键安装</a> ·
-  <a href="#支持系统">支持系统</a> ·
-  <a href="#效果图预览">效果图预览</a> ·
-  <a href="#核心功能">核心功能</a> ·
-  <a href="#开源许可">开源许可</a>
-</p>
-
-## 介绍
-
-科技Lion 的 Shell 脚本工具是一款全能脚本工具箱，专为 Linux 监控、测试和管理而设计。
-无论您是初学者还是经验丰富的用户，该工具都能提供便捷的解决方案。脚本集成 Docker
-管理、LDNMP 建站、网站优化与防御、备份还原迁移，以及各类系统工具和应用的安装管理，
-让服务器维护更加简单。
-
-KejiLion's Shell script is an all-in-one toolbox designed for Linux monitoring, testing, and
-server management. It brings together Docker management, LDNMP website deployment, optimization,
-protection, backup, restoration, migration, and common server applications in one interactive tool.
-
 ## 一键安装
 
-使用 `root` 用户执行以下命令。
+使用 `root` 用户执行：
 
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh)
@@ -50,86 +24,40 @@ bash <(curl -sL https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh
 bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh)
 ```
 
-首次运行后可按脚本提示设置 `k` 快捷命令，后续直接输入 `k` 即可打开主菜单。
+运行后会安装 `k` 快捷命令，之后直接输入 `k` 即可打开主菜单，`k help` 查看命令行用法。
 
 > [!IMPORTANT]
-> 脚本包含软件安装、网络、防火墙、磁盘和网站环境等系统级操作。
-> 请在执行前阅读终端提示，并提前备份重要网站、数据库、容器和配置。
+> 脚本包含软件安装、网络、防火墙、磁盘等系统级操作。
+> 请在执行前阅读终端提示，并提前备份重要数据、容器和配置。
 
-## 支持系统
+## 功能
 
-<p>
-  <img src="https://img.shields.io/badge/Ubuntu-FFB6C1?style=for-the-badge&logo=ubuntu&logoColor=black" alt="Ubuntu">
-  <img src="https://img.shields.io/badge/Debian-AFEEEE?style=for-the-badge&logo=debian&logoColor=black" alt="Debian">
-  <img src="https://img.shields.io/badge/CentOS-98FB98?style=for-the-badge&logo=centos&logoColor=black" alt="CentOS">
-  <img src="https://img.shields.io/badge/Alpine_Linux-ADD8E6?style=for-the-badge&logo=alpinelinux&logoColor=black" alt="Alpine Linux">
-  <img src="https://img.shields.io/badge/Kali-D3D3D3?style=for-the-badge&logo=kali-linux&logoColor=black" alt="Kali Linux">
-  <img src="https://img.shields.io/badge/Arch-FFFFE0?style=for-the-badge&logo=archlinux&logoColor=black" alt="Arch Linux">
-  <img src="https://img.shields.io/badge/Red_Hat-FFE4E1?style=for-the-badge&logo=redhat&logoColor=black" alt="Red Hat">
-  <img src="https://img.shields.io/badge/Fedora-FFD700?style=for-the-badge&logo=fedora&logoColor=black" alt="Fedora">
-  <img src="https://img.shields.io/badge/AlmaLinux-FFEFD5?style=for-the-badge&logo=almalinux&logoColor=black" alt="AlmaLinux">
-  <img src="https://img.shields.io/badge/Rocky_Linux-FFFACD?style=for-the-badge&logo=rocky-linux&logoColor=black" alt="Rocky Linux">
-</p>
+- **系统信息与维护**：系统信息、更新、清理、基础工具安装、BBR/BBRv3、内核参数优化、一条龙调优。
+- **网络与测试**：测速、回程路由、流媒体解锁等测试脚本合集，WARP 管理。
+- **Docker 管理**：容器、镜像、网络、存储卷管理，备份/迁移/还原。
+- **应用市场**：一键安装和管理常用面板、服务与 AI 工具，支持 `~/apps-local` 本地自建应用。
+- **系统工具**：防火墙、fail2ban、SSH、虚拟内存、时区、DNS、硬盘、rsync、定时任务、限流关机等。
+- **后台工作区与集群控制**：tmux 后台任务，多服务器批量执行。
 
-不同发行版的软件包、网络栈和服务管理方式存在差异，脚本会根据当前系统能力开放对应功能。
+## 与上游的差异
 
-## 效果图预览
+相对上游 v4.5.14 移除了以下内容，详见 [更新日志](kejilion_sh_log.txt)：
 
-<p>
-  <img src="https://kejilion.sh/img/screenshots/kejilionsh.webp" alt="科技lion一键脚本中文版" width="49%">
-  <img src="https://kejilion.sh/img/screenshots/kejilionsh_en.webp" alt="KejiLion Shell Script English Version" width="49%">
-</p>
+- 遥测/数据采集、首次运行许可协议、广告专栏与外部宣传链接
+- KPanel 面板及其协议接口
+- LDNMP 建站（证书申请与续签、WAF、反向代理、站点管理）及依赖域名反代的应用
+- 多语言版本、游戏开服脚本
 
-## 核心功能
+脚本更新、应用市场与配置资源全部从本仓库获取，不再访问 kejilion 的服务器：
 
-- **系统信息概览**：快速展示 CPU、内存、磁盘、带宽等运行状态。<br>
-  *System status overview: CPU, memory, disk, bandwidth, and more.*
-- **网络测试工具**：集成测速、回程、延迟、丢包检测等工具。<br>
-  *Network tools: speed tests, route tracing, latency, and packet loss tests.*
-- **Docker 容器管理**：提供容器、镜像、网络、存储卷和日志管理。<br>
-  *Docker management for containers, images, networks, volumes, and logs.*
-- **LDNMP 一键部署**：快速搭建 Nginx、MySQL、PHP、Redis 网站环境。<br>
-  *One-click LDNMP stack deployment for Nginx, MySQL, PHP, and Redis.*
-- **网站防御与优化**：提供 CC 防护、防爬虫、防火墙和性能优化。<br>
-  *Website protection and optimization with anti-CC, anti-crawler, firewall, and tuning tools.*
-- **备份与迁移**：支持站点和数据库备份、恢复与远程迁移。<br>
-  *Backup and migration for websites, databases, restoration, and remote transfer.*
-- **BBR 加速优化**：管理内核加速与网络拥塞控制算法。<br>
-  *Network acceleration and TCP congestion control optimization.*
-- **应用市场集成**：一键安装和管理常用面板、服务与应用。<br>
-  *App market integration for one-click deployment and management.*
-- **自动更新机制**：检测脚本版本并提供更新入口。<br>
-  *Update detection keeps the script features current.*
+| 目录 | 内容 |
+|---|---|
+| `kejilion.sh` | 主脚本 |
+| `apps/` | 应用市场配置，见 [说明](apps/README.md) |
+| `res/` | 部分应用使用的 compose、fail2ban、prometheus 等配置 |
 
-## 项目文档
-
-- [脚本更新日志](kejilion_sh_log.txt)
-- [应用市场说明](apps/README.md)
-- [问题反馈](https://github.com/zidou-kiyn/sh/issues)
-- [上游项目 kejilion/sh](https://github.com/kejilion/sh)
-- [科技lion官方网站](https://kejilion.sh/)
-
-## 使用与安全
-
-- 仅从官方域名和本仓库获取脚本，执行前可先审阅源码。
-- 重要网站、数据库、Docker 数据和系统配置应定期备份。
-- 生产服务器执行升级、卸载、磁盘或网络操作前，应确认终端显示的影响范围。
-- 提交问题时，请隐藏密码、Token、私钥和公网 IP 等敏感信息。
-
-## 支持我们
-
-觉得脚本还可以，欢迎 Star、反馈问题或参与改进。
-
-Feel free to support the project with USDT TRC20:
-
-```text
-TCP3PLGUTG9Z4z4tnHHSLbw5bgp8NXhTT3
-```
+国内/IPv6 模式使用的 GitHub 代理在脚本开头的 `gh_proxy_mirror` 变量中配置。
 
 ## 开源许可
 
-本项目采用 [Apache License 2.0](LICENSE) 开源。
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=zidou-kiyn/sh&type=Date)](https://star-history.com/#zidou-kiyn/sh&Date)
+本项目基于 [kejilion/sh](https://github.com/kejilion/sh) 修改，沿用 [Apache License 2.0](LICENSE)。
