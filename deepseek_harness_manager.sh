@@ -354,67 +354,6 @@ refresh_trusted_hosts() {
 	fi
 }
 
-rollback_webui_domain_add() {
-	local domain="$1"
-	remove_webui_domain_record "$domain" || true
-	remove_webui_auth_credentials "$domain" || true
-	remove_webui_domain_artifacts "$domain"
-	reload_managed_nginx >/dev/null 2>&1 || true
-	refresh_trusted_hosts >/dev/null 2>&1 || true
-}
-
-create_webui_domain() {
-	local domain username password
-	domain=$(normalize_domain "$1")
-	username="$2"
-	password="$3"
-	valid_domain "$domain" || {
-		echo -e "${RED}域名格式无效，请输入 example.com，不带协议和路径。${NC}"
-		return 1
-	}
-	valid_basic_auth_user "$username" || {
-		echo -e "${RED}访问用户名只能包含字母、数字、点、下划线或横线。${NC}"
-		return 1
-	}
-	[ "${#password}" -ge 8 ] || {
-		echo -e "${RED}访问密码至少需要 8 个字符。${NC}"
-		return 1
-	}
-	if webui_domain_managed "$domain"; then
-		echo -e "${YELLOW}该域名已由 DeepSeek Harness 管理。${NC}"
-		return 0
-	fi
-	if webui_domain_artifacts_exist "$domain"; then
-		echo -e "${RED}域名已有站点、证书或认证文件，为避免覆盖已拒绝操作。${NC}"
-		return 1
-	fi
-	command -v "$K_COMMAND" >/dev/null 2>&1 || {
-		echo -e "${RED}找不到 k 命令，无法调用 k fd 创建反向代理。${NC}"
-		return 1
-	}
-	ensure_webui_acl_tool || {
-		echo -e "${RED}缺少 ACL 工具，无法安全配置 Nginx 认证文件权限。${NC}"
-		return 1
-	}
-	if ! "$K_COMMAND" fd "$domain" "$LISTEN_HOST" "$LISTEN_PORT"; then
-		rollback_webui_domain_add "$domain"
-		echo -e "${RED}k fd 创建反向代理失败，已清理本次产生的文件。${NC}"
-		return 1
-	fi
-	if ! write_webui_auth_file "$domain" "$username" "$password" \
-		|| ! grant_webui_auth_access "$domain" \
-		|| ! patch_webui_proxy_config "$domain" \
-		|| ! reload_managed_nginx \
-		|| ! add_webui_domain_record "$domain" \
-		|| ! refresh_trusted_hosts; then
-		rollback_webui_domain_add "$domain"
-		echo -e "${RED}域名配置失败，已回滚本次创建的反代文件。${NC}"
-		return 1
-	fi
-	echo -e "${GREEN}域名访问已启用：https://${domain}${NC}"
-	echo "已启用 HTTPS、Basic Auth 和 Harness trusted-host。"
-}
-
 delete_webui_domain() {
 	local domain
 	domain=$(normalize_domain "$1")
@@ -812,7 +751,7 @@ show_webui_addresses() {
 }
 
 webui_settings_menu() {
-	local choice domain username password confirm domains
+	local choice
 	dsh_installed || {
 		echo -e "${RED}请先安装 DeepSeek Harness。${NC}"
 		return 1
@@ -822,45 +761,10 @@ webui_settings_menu() {
 		dsh_menu_title 'DeepSeek Harness WebUI 设置'
 		show_webui_addresses
 		dsh_menu_separator
-		dsh_menu_item 1 '添加域名访问'
-		dsh_menu_item 2 '删除域名访问' "$RED"
 		dsh_menu_item 0 '返回' "$GRAY"
 		dsh_menu_separator
 		read -r -p "$(dsh_menu_prompt '请输入选项: ')" choice
 		case "$choice" in
-			1)
-				require_root || { read -r -p "按回车键继续..."; continue; }
-				read -r -p "请输入已解析到本机的域名（不带 https://）: " domain
-				read -r -p "请输入访问用户名 [admin]: " username
-				username=${username:-admin}
-				read -r -s -p "请输入访问密码: " password
-				echo
-				create_webui_domain "$domain" "$username" "$password"
-				password=""
-				read -r -p "按回车键继续..."
-				;;
-			2)
-				require_root || { read -r -p "按回车键继续..."; continue; }
-				domains=$(list_webui_domains)
-				if [ -z "$domains" ]; then
-					echo -e "${YELLOW}当前没有托管的域名。${NC}"
-					read -r -p "按回车键继续..."
-					continue
-				fi
-				echo "$domains"
-				read -r -p "请输入要删除的域名: " domain
-				domain=$(normalize_domain "$domain")
-				if ! webui_domain_managed "$domain"; then
-					echo -e "${RED}该域名不在托管列表中。${NC}"
-				else
-					read -r -p "确定删除 https://${domain} 的反代、证书和认证文件？(y/N): " confirm
-					case "$confirm" in
-						[yY]) delete_webui_domain "$domain" ;;
-						*) echo "已取消。" ;;
-					esac
-				fi
-				read -r -p "按回车键继续..."
-				;;
 			0) return 0 ;;
 		esac
 	done
