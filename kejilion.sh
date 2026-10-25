@@ -23,13 +23,16 @@ remove_app_id() {
 }
 
 
+# GitHub 下载代理（CN/V6 模式使用）；公共代理，失效时改这里即可，备选: https://gh-proxy.com/
+gh_proxy_mirror="https://ghfast.top/"
+
 quanju_canshu() {
 if [ "$canshu" = "CN" ]; then
 	zhushi=0
-	gh_proxy="https://gh.kejilion.pro/"
+	gh_proxy="$gh_proxy_mirror"
 elif [ "$canshu" = "V6" ]; then
 	zhushi=1
-	gh_proxy="https://gh.kejilion.pro/"
+	gh_proxy="$gh_proxy_mirror"
 else
 	zhushi=1  # 0 表示执行，1 表示不执行
 	gh_proxy="https://"
@@ -388,7 +391,6 @@ if [ "$country" = "CN" ]; then
 	"https://hub2.nat.tf",
 	"https://hub3.nat.tf",
 	"https://docker.m.daocloud.io",
-	"https://docker.kejilion.pro",
 	"https://docker.367231.xyz",
 	"https://hub.1panel.dev",
 	"https://dockerproxy.cool",
@@ -15712,7 +15714,7 @@ PY
 			else
 				OPENCLAW_MEMORY_HF_BASE="https://hf-mirror.com"
 			fi
-			OPENCLAW_MEMORY_GH_PROXY="https://gh.kejilion.pro/"
+			OPENCLAW_MEMORY_GH_PROXY="$gh_proxy_mirror"
 		else
 			if [ "$hf_ok" = "ok" ]; then
 				OPENCLAW_MEMORY_HF_BASE="https://huggingface.co"
@@ -23860,7 +23862,7 @@ echo -e "${gl_kjlan}B站: ${gl_bai}https://b23.tv/2mqnQyh              ${gl_kjla
 echo -e "${gl_kjlan}官网: ${gl_bai}https://kejilion.pro/              ${gl_kjlan}导航: ${gl_bai}https://dh.kejilion.pro/${gl_bai}"
 echo -e "${gl_kjlan}博客: ${gl_bai}https://blog.kejilion.pro/         ${gl_kjlan}软件中心: ${gl_bai}https://app.kejilion.pro/${gl_bai}"
 echo "------------------------"
-echo -e "${gl_kjlan}脚本官网: ${gl_bai}https://kejilion.sh            ${gl_kjlan}GitHub地址: ${gl_bai}${gh_https_url}github.com/kejilion/sh${gl_bai}"
+echo -e "${gl_kjlan}脚本官网: ${gl_bai}https://kejilion.sh            ${gl_kjlan}GitHub地址: ${gl_bai}${gh_https_url}github.com/zidou-kiyn/sh${gl_bai}"
 echo "------------------------"
 echo ""
 }
@@ -23992,10 +23994,10 @@ while true; do
 			local ipv6_address=$(curl -s --max-time 1 ipv6.ip.sb)
 			local cron_proxy cron_sed_cmd
 			if [ "$country" = "CN" ]; then
-				cron_proxy="https://gh.kejilion.pro/"
+				cron_proxy="$gh_proxy_mirror"
 				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"CN\"/g' ~/kejilion.sh"
 			elif [ -n "$ipv6_address" ]; then
-				cron_proxy="https://gh.kejilion.pro/"
+				cron_proxy="$gh_proxy_mirror"
 				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"V6\"/g' ~/kejilion.sh"
 			else
 				cron_proxy="https://"

@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/kejilion/sh/stargazers"><img src="https://img.shields.io/github/stars/kejilion/sh?style=flat-square" alt="GitHub Stars"></a>
-  <a href="https://github.com/kejilion/sh/network/members"><img src="https://img.shields.io/github/forks/kejilion/sh?style=flat-square" alt="GitHub Forks"></a>
-  <a href="https://github.com/kejilion/sh/commits/main"><img src="https://img.shields.io/github/last-commit/kejilion/sh?style=flat-square" alt="Last Commit"></a>
+  <a href="https://github.com/zidou-kiyn/sh/stargazers"><img src="https://img.shields.io/github/stars/zidou-kiyn/sh?style=flat-square" alt="GitHub Stars"></a>
+  <a href="https://github.com/zidou-kiyn/sh/network/members"><img src="https://img.shields.io/github/forks/zidou-kiyn/sh?style=flat-square" alt="GitHub Forks"></a>
+  <a href="https://github.com/zidou-kiyn/sh/commits/main"><img src="https://img.shields.io/github/last-commit/zidou-kiyn/sh?style=flat-square" alt="Last Commit"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square" alt="Apache-2.0 License"></a>
 </p>
 
@@ -40,16 +40,14 @@ protection, backup, restoration, migration, and common server applications in on
 
 使用 `root` 用户执行以下命令。
 
-### 中文版
-
 ```bash
-bash <(curl -sL kejilion.sh)
+bash <(curl -sL https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh)
 ```
 
-### English Version
+国内服务器可通过 GitHub 代理下载：
 
 ```bash
-bash <(curl -sL kejilion.sh) en
+bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh)
 ```
 
 首次运行后可按脚本提示设置 `k` 快捷命令，后续直接输入 `k` 即可打开主菜单。
@@ -107,7 +105,8 @@ bash <(curl -sL kejilion.sh) en
 
 - [脚本更新日志](kejilion_sh_log.txt)
 - [应用市场说明](apps/README.md)
-- [问题反馈](https://github.com/kejilion/sh/issues)
+- [问题反馈](https://github.com/zidou-kiyn/sh/issues)
+- [上游项目 kejilion/sh](https://github.com/kejilion/sh)
 - [科技lion官方网站](https://kejilion.sh/)
 
 ## 使用与安全
@@ -133,4 +132,4 @@ TCP3PLGUTG9Z4z4tnHHSLbw5bgp8NXhTT3
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=kejilion/sh&type=Date)](https://star-history.com/#kejilion/sh&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=zidou-kiyn/sh&type=Date)](https://star-history.com/#zidou-kiyn/sh&Date)
