@@ -1,0 +1,10 @@
+services:
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: phpmyadmin
+    ports:
+      - "8877:80"
+    environment:
+      PMA_HOST: mysql
+      UPLOAD_LIMIT: 300M
+

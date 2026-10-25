@@ -1367,13 +1367,13 @@ install_ldnmp_conf() {
 
   # 创建必要的目录和文件
   cd /home && mkdir -p web/html web/mysql web/certs web/conf.d web/stream.d web/redis web/log/nginx web/letsencrypt && touch web/docker-compose.yml
-  wget -O /home/web/nginx.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/nginx10.conf
-  wget -O /home/web/conf.d/default.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/default10.conf
+  wget -O /home/web/nginx.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/nginx10.conf
+  wget -O /home/web/conf.d/default.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/default10.conf
 
   default_server_ssl
 
   # 下载 docker-compose.yml 文件并进行替换
-  wget -O /home/web/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/LNMP-docker-compose-10.yml
+  wget -O /home/web/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/LNMP-docker-compose-10.yml
   dbrootpasswd=$(openssl rand -base64 16) ; dbuse=$(openssl rand -hex 4) ; dbusepasswd=$(openssl rand -base64 8)
 
   # 在 docker-compose.yml 文件中进行替换
@@ -1389,7 +1389,7 @@ update_docker_compose_with_db_creds() {
   cp /home/web/docker-compose.yml /home/web/docker-compose1.yml
 
   if ! grep -q "letsencrypt" /home/web/docker-compose.yml; then
-	wget -O /home/web/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/LNMP-docker-compose-10.yml
+	wget -O /home/web/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/LNMP-docker-compose-10.yml
 
   	dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
   	dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
@@ -2172,7 +2172,7 @@ def merge_configuration(old, live, new):
 
 
 def download(revision, name, prefix):
-    url = prefix + 'raw.githubusercontent.com/kejilion/nginx/' + revision + '/' + name
+    url = prefix + 'raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx-pinned/' + revision + '/' + name
     if urllib.parse.urlsplit(url).scheme != 'https':
         raise ValueError('配置来源必须使用 HTTPS')
 
@@ -3015,7 +3015,7 @@ phpmyadmin_upgrade() {
   cd /home/web/
   docker rm -f $ldnmp_pods > /dev/null 2>&1
   docker images --filter=reference="$ldnmp_pods*" -q | xargs docker rmi > /dev/null 2>&1
-  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/docker/refs/heads/main/docker-compose.phpmyadmin.yml
+  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/docker-compose.phpmyadmin.yml
   docker compose -f docker-compose.phpmyadmin.yml up -d
   clear
   ip_address
@@ -3245,7 +3245,7 @@ WAF_PATH
 	trap 'for filename in configure.py policy.py nginx_edit.py example-policy.json cloudflare-ips.json legacy-jails.local; do rm -f -- "$stage/$filename"; done; rmdir -- "$stage" 2>/dev/null || true' EXIT
 	chmod 700 "$stage" || exit 1
 	while read -r checksum filename; do
-		if ! "$WAF_PYTHON" -I - "${gh_proxy:-https://}raw.githubusercontent.com/kejilion/nginx/$revision/waf/$filename" "$stage/$filename" <<'WAF_DOWNLOAD'
+		if ! "$WAF_PYTHON" -I - "${gh_proxy:-https://}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx-pinned/$revision/waf/$filename" "$stage/$filename" <<'WAF_DOWNLOAD'
 import os,signal,sys,urllib.parse,urllib.request
 class HTTPSOnly(urllib.request.HTTPRedirectHandler):
  def redirect_request(self,req,fp,code,msg,headers,url):
@@ -3506,7 +3506,7 @@ nginx_br() {
 	local mode=$1
 
 	if ! grep -q "kjlion/nginx:alpine" /home/web/docker-compose.yml; then
-		wget -O /home/web/nginx.conf "${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/nginx10.conf"
+		wget -O /home/web/nginx.conf "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/nginx10.conf"
 	fi
 
 	if [ "$mode" == "on" ]; then
@@ -3562,7 +3562,7 @@ nginx_zstd() {
 	local mode=$1
 
 	if ! grep -q "kjlion/nginx:alpine" /home/web/docker-compose.yml; then
-		wget -O /home/web/nginx.conf "${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/nginx10.conf"
+		wget -O /home/web/nginx.conf "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/nginx10.conf"
 	fi
 
 	if [ "$mode" == "on" ]; then
@@ -3670,7 +3670,7 @@ web_security() {
 					  wget ${gh_proxy}raw.githubusercontent.com/linuxserver/fail2ban-confs/master/filter.d/nginx-bad-request.conf
 
 					  cd /etc/fail2ban/jail.d/
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/config/main/fail2ban/nginx-docker-cc.conf
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/config/fail2ban/nginx-docker-cc.conf
 					  sed -i "/cloudflare/d" /etc/fail2ban/jail.d/nginx-docker-cc.conf
 					  f2b_status
 					  ;;
@@ -3745,14 +3745,14 @@ web_security() {
 					  read -e -p "输入CF的账号: " cfuser
 					  read -e -p "输入CF的Global API Key: " cftoken
 
-					  wget -O /home/web/conf.d/default.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/default11.conf
+					  wget -O /home/web/conf.d/default.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/default11.conf
 					  docker exec nginx nginx -s reload
 
 					  cd /etc/fail2ban/jail.d/
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/config/main/fail2ban/nginx-docker-cc.conf
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/config/fail2ban/nginx-docker-cc.conf
 
 					  cd /etc/fail2ban/action.d
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/config/main/fail2ban/cloudflare-docker.conf
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/config/fail2ban/cloudflare-docker.conf
 
 					  sed -i "s/kejilion@outlook.com/$cfuser/g" /etc/fail2ban/action.d/cloudflare-docker.conf
 					  sed -i "s/APIKEY00000/$cftoken/g" /etc/fail2ban/action.d/cloudflare-docker.conf
@@ -4763,7 +4763,7 @@ mkdir -p $GRAFANA_DIR
 chown -R 472:472 $GRAFANA_DIR
 
 if [ ! -f "$PROMETHEUS_DIR/prometheus.yml" ]; then
-	curl -o "$PROMETHEUS_DIR/prometheus.yml" ${gh_proxy}raw.githubusercontent.com/kejilion/config/refs/heads/main/prometheus/prometheus.yml
+	curl -o "$PROMETHEUS_DIR/prometheus.yml" ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/config/prometheus/prometheus.yml
 fi
 
 # Create Docker network for monitoring
@@ -4865,7 +4865,7 @@ f2b_install_sshd() {
 		cd /etc/fail2ban/jail.d/
 		curl --fail --silent --show-error --location \
 			--output centos-ssh.conf \
-			"${gh_proxy}raw.githubusercontent.com/kejilion/config/main/fail2ban/centos-ssh.conf" || return 1
+			"${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/config/fail2ban/centos-ssh.conf" || return 1
 		if [ ! -e /var/log/secure ]; then
 			touch /var/log/secure || return 1
 			chmod 0600 /var/log/secure || return 1
@@ -5171,8 +5171,8 @@ ldnmp_Proxy() {
 }
 
 app_write_proxy() {
-	wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy-backend.conf
+	wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/reverse-proxy-backend.conf
 
 	backend=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
 	sed -i "s/backend_yuming_com/backend_$backend/g" /home/web/conf.d/"$yuming".conf
@@ -5219,8 +5219,8 @@ ldnmp_Proxy_backend() {
 	install_ssltls
 	certs_status
 
-	wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy-backend.conf
+	wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/reverse-proxy-backend.conf
 
 	backend=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
 	sed -i "s/backend_yuming_com/backend_$backend/g" /home/web/conf.d/"$yuming".conf
@@ -5397,7 +5397,7 @@ ldnmp_Proxy_backend_stream() {
 	nginx_install_status
 	cd /home && mkdir -p web/stream.d
 	grep -q '^[[:space:]]*stream[[:space:]]*{' /home/web/nginx.conf || echo -e '\nstream {\n    include /etc/nginx/stream.d/*.conf;\n}' | tee -a /home/web/nginx.conf
-	wget -O /home/web/stream.d/$proxy_name.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy-backend-stream.conf
+	wget -O /home/web/stream.d/$proxy_name.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/reverse-proxy-backend-stream.conf
 
 	backend=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
 	sed -i "s/backend_yuming_com/${proxy_name}_${backend}/g" /home/web/stream.d/"$proxy_name".conf
@@ -11081,8 +11081,8 @@ linux_ldnmp() {
 	  add_db
 
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/discuz.com.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/discuz.com.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 	  nginx_http_on
@@ -11125,8 +11125,8 @@ linux_ldnmp() {
 	  certs_status
 	  add_db
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/kdy.com.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/kdy.com.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 	  nginx_http_on
@@ -11168,8 +11168,8 @@ linux_ldnmp() {
 	  add_db
 
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/dujiaoka.com.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/dujiaoka.com.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 	  nginx_http_on
@@ -11222,8 +11222,8 @@ linux_ldnmp() {
 	  certs_status
 	  add_db
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/flarum.com.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/flarum.com.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 
@@ -11284,8 +11284,8 @@ linux_ldnmp() {
 	  certs_status
 	  add_db
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/typecho.com.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/typecho.com.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 	  nginx_http_on
@@ -11327,8 +11327,8 @@ linux_ldnmp() {
 	  certs_status
 	  add_db
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/refs/heads/main/index_php.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/index_php.conf
 	  sed -i "s|/var/www/html/yuming.com/|/var/www/html/yuming.com/linkstack|g" /home/web/conf.d/$yuming.conf
 	  sed -i "s|yuming.com|$yuming|g" /home/web/conf.d/$yuming.conf
 
@@ -11367,8 +11367,8 @@ linux_ldnmp() {
 	  certs_status
 	  add_db
 
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/index_php.conf
+	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/map.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/index_php.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 	  nginx_http_on
@@ -11512,7 +11512,7 @@ linux_ldnmp() {
 	  web_certificate_available || return 1
 
 
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/rewrite.conf || return 1
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/rewrite.conf || return 1
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf || return 1
 	  sed -i "s/baidu.com/$reverseproxy/g" /home/web/conf.d/$yuming.conf || return 1
 
@@ -11554,7 +11554,7 @@ linux_ldnmp() {
 	  certs_status
 
 
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy-domain.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/reverse-proxy-domain.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 	  sed -i "s|fandaicom|$fandai_yuming|g" /home/web/conf.d/$yuming.conf
 
@@ -11624,7 +11624,7 @@ linux_ldnmp() {
 	  install_ssltls
 	  certs_status
 
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/html.conf
+	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/nginx/html.conf
 	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
 
 	  nginx_http_on
@@ -17625,9 +17625,13 @@ openclaw_backup_restore_menu() {
 
 
 
+# 应用市场配置位于本仓库 apps/ 目录；浅克隆整个仓库后读取其中的 apps/
+apps_repo_dir="$HOME/.kejilion-sh-repo"
+apps_catalog_dir="$apps_repo_dir/apps"
+
 refresh_apps_catalog() {
-	local apps_dir="$HOME/apps"
-	local apps_remote="${gh_proxy}github.com/kejilion/apps.git"
+	local apps_dir="$apps_repo_dir"
+	local apps_remote="${gh_proxy}github.com/zidou-kiyn/sh.git"
 
 	install git || return 1
 	if [ -e "$apps_dir" ] && [ ! -d "$apps_dir/.git" ]; then
@@ -17635,13 +17639,13 @@ refresh_apps_catalog() {
 		return 1
 	fi
 	if [ ! -d "$apps_dir/.git" ]; then
-		timeout 30s git clone --depth=1 "$apps_remote" "$apps_dir" || {
+		timeout 60s git clone --depth=1 "$apps_remote" "$apps_dir" || {
 			echo -e "${gl_hong}应用列表下载失败，拒绝使用不完整配置。${gl_bai}"
 			return 1
 		}
 		return 0
 	fi
-	if ! timeout 30s git -C "$apps_dir" pull --ff-only "$apps_remote" main; then
+	if ! timeout 60s git -C "$apps_dir" pull --ff-only --depth=1 "$apps_remote" main; then
 		echo -e "${gl_hong}应用列表更新失败，拒绝继续使用可能过期的配置。${gl_bai}"
 		echo "请检查网络或 ${apps_dir} 中的本地修改后重试。"
 		return 1
@@ -17672,19 +17676,19 @@ local_app_config_trusted() {
 	[ $((8#$mode & 8#022)) -eq 0 ]
 }
 
-# 官方 ~/apps 优先，其次 ~/apps-local；输出配置路径
+# 仓库 apps/ 优先，其次 ~/apps-local；输出配置路径
 # local:<名称> 只查 ~/apps-local，用于避开内置菜单别名(如 b/r/bt)
 resolve_app_config() {
 	local name="$1" local_only=0
 	case "$name" in
 		local:*) name="${name#local:}"; local_only=1 ;;
 	esac
-	if [ -f "$HOME/apps/${name}.conf" ]; then
+	if [ -f "$apps_catalog_dir/${name}.conf" ]; then
 		if [ "$local_only" = 1 ]; then
 			echo -e "${gl_hong}错误: ${gl_bai}${name} 与官方应用同名，本地配置已忽略" >&2
 			return 1
 		fi
-		printf '%s\n' "$HOME/apps/${name}.conf"
+		printf '%s\n' "$apps_catalog_dir/${name}.conf"
 		return 0
 	fi
 	if local_app_config_trusted "$name"; then
@@ -17801,7 +17805,7 @@ while true; do
 	  echo -e "${gl_kjlan}第三方应用列表"
   	  echo -e "${gl_kjlan}想要让你的应用出现在这里？查看开发者指南: ${gl_huang}https://dev.kejilion.sh/${gl_bai}"
 
-	  for f in "$HOME"/apps/*.conf; do
+	  for f in "$apps_catalog_dir"/*.conf; do
 		  [ -e "$f" ] || continue
 		  local base_name=$(basename "$f" .conf)
 		  # 获取应用描述
@@ -17828,7 +17832,7 @@ while true; do
 			  echo -e "${gl_kjlan}本地应用列表 ${gl_bai}(~/apps-local，未经官方审核)"
 			  local_header_shown=1
 		  fi
-		  if [ -e "$HOME/apps/${base_name}.conf" ]; then
+		  if [ -e "$apps_catalog_dir/${base_name}.conf" ]; then
 			  echo -e "${gl_huang}$base_name${gl_bai} - 与官方应用同名，已忽略"
 			  continue
 		  fi
@@ -18360,7 +18364,7 @@ while true; do
 
 		docker_app_install() {
 			cd /home/ && mkdir -p docker/cloud && cd docker/cloud && mkdir temp_data && mkdir -vp cloudreve/{uploads,avatar} && touch cloudreve/conf.ini && touch cloudreve/cloudreve.db && mkdir -p aria2/config && mkdir -p data/aria2 && chmod -R 777 data/aria2
-			curl -o /home/docker/cloud/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/cloudreve-docker-compose.yml
+			curl -o /home/docker/cloud/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/cloudreve-docker-compose.yml
 			sed -i "s/5212:5212/${docker_port}:5212/g" /home/docker/cloud/docker-compose.yml
 			cd /home/docker/cloud/
 			docker compose up -d
@@ -19989,7 +19993,7 @@ while true; do
 			mkdir -p /home/docker/moontv/data
 			cd /home/docker/moontv
 
-			curl -o /home/docker/moontv/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/moontv-docker-compose.yml
+			curl -o /home/docker/moontv/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/moontv-docker-compose.yml
 			sed -i "s/3000:3000/${docker_port}:3000/g" /home/docker/moontv/docker-compose.yml
 			sed -i "s|admin_password|${admin_password}|g" /home/docker/moontv/docker-compose.yml
 			sed -i "s|admin|${admin}|g" /home/docker/moontv/docker-compose.yml
@@ -20637,7 +20641,7 @@ while true; do
 			mkdir -p /home/docker/gitea/postgres
 			cd /home/docker/gitea
 
-			curl -o /home/docker/gitea/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/gitea-docker-compose.yml
+			curl -o /home/docker/gitea/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/gitea-docker-compose.yml
 			sed -i "s/3000:3000/${docker_port}:3000/g" /home/docker/gitea/docker-compose.yml
 			cd /home/docker/gitea/
 			docker compose up -d
@@ -20822,7 +20826,7 @@ while true; do
 			chmod -R 777 /home/docker/2fauth/
 			cd /home/docker/2fauth
 
-			curl -o /home/docker/2fauth/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/2fauth-docker-compose.yml
+			curl -o /home/docker/2fauth/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/2fauth-docker-compose.yml
 
 			sed -i "s/8000:8000/${docker_port}:8000/g" /home/docker/2fauth/docker-compose.yml
 			sed -i "s/yuming.com/${yuming}/g" /home/docker/2fauth/docker-compose.yml
@@ -21057,7 +21061,7 @@ while true; do
 			chmod -R 777 /home/docker/dsm/
 			cd /home/docker/dsm
 
-			curl -o /home/docker/dsm/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/dsm-docker-compose.yml
+			curl -o /home/docker/dsm/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/dsm-docker-compose.yml
 
 			sed -i "s/5000:5000/${docker_port}:5000/g" /home/docker/dsm/docker-compose.yml
 			sed -i "s|CPU_CORES: "2"|CPU_CORES: "${CPU_CORES}"|g" /home/docker/dsm/docker-compose.yml
@@ -23664,7 +23668,7 @@ EOF
 cluster_python3() {
 	install python3 python3-paramiko
 	cd ~/cluster/
-	curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/python-for-vps/main/cluster/$py_task
+	curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/python-for-vps/cluster/$py_task
 	python3 ~/cluster/$py_task
 }
 

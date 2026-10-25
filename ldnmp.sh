@@ -21,7 +21,7 @@ curl -L "https://github.com/docker/compose/releases/latest/download/docker-compo
 cd /home && mkdir -p web/html web/mysql web/certs web/conf.d web/redis && touch web/docker-compose.yml
 
 # 下载 docker-compose.yml 文件并进行替换
-wget -O /home/web/docker-compose.yml https://raw.githubusercontent.com/kejilion/docker/main/LNMP-docker-compose-4.yml
+wget -O /home/web/docker-compose.yml https://raw.githubusercontent.com/zidou-kiyn/sh/main/res/docker/LNMP-docker-compose-4.yml
 
 
 # 在 docker-compose.yml 文件中进行替换
