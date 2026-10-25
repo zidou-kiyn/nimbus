@@ -1,0 +1,109 @@
+# 🧰 功能详解
+
+- [主菜单](#主菜单)
+- [系统工具](#系统工具)
+- [重装系统](#重装系统)
+- [BBRv3 加速](#bbrv3-加速)
+- [自动安装安全更新](#自动安装安全更新)
+- [TG-bot 监控预警](#tg-bot-监控预警)
+- [应用部署](#应用部署)
+- [文件与配置位置](#文件与配置位置)
+
+## 主菜单
+
+| # | 模块 | 内容 |
+|:---:|---|---|
+| 1 | 系统信息 | CPU、内存、磁盘、流量、地理位置、运行时长等 |
+| 2 / 3 | 系统更新 / 清理 | 自动识别 apt / dnf / yum / apk / pacman 等包管理器 |
+| 4 | 基础工具 | curl、wget、htop、btop、tmux、ffmpeg、vim、git 等的安装与卸载；realm 端口转发（xwPF） |
+| 5 | BBRv3 加速 | 见 [下文](#bbrv3-加速) |
+| 6 | Docker 管理 | 安装与换源、容器 / 镜像 / 网络 / 卷管理、IPv6、备份 / 迁移 / 还原 |
+| 7 | 测试脚本 | 流媒体解锁、IP 质量、三网回程路由、测速、yabs / GB5 / 融合怪 |
+| 8 | 系统工具 | 见 [下文](#系统工具) |
+| 9 | 新机开荒 | 见 [新机开荒](wizard.md) |
+| 00 | 脚本更新 | 手动更新，或开启每天凌晨 2 点自动更新 |
+
+## 系统工具
+
+| 分组 | 编号与功能 |
+|---|---|
+| 账号与登录 | 1 修改密码 · 2 密码登录模式 · 3 密钥登录模式 · 4 禁用 root 并新建账户 · 5 用户管理 · 6 用户 / 密码生成器 |
+| 网络 | 7 开放所有端口 · 8 修改 SSH 端口 · 9 优化 DNS · 10 IPv4 / IPv6 优先 · 11 端口占用 · 12 防火墙 · 13 hosts 解析 · 14 网卡管理 |
+| 系统 | 15 重装系统 · 16 虚拟内存 · 17 时区 · 18 BBRv3 · 19 主机名 · 20 更新源 · 21 定时任务 · 22 系统语言 · 23 环境变量 |
+| 安全与运维 | 24 fail2ban · 25 限流自动关机 · 26 TG-bot 监控 · 27 命令行美化 · 28 备份与恢复 · 29 硬盘分区 · 30 命令历史 · 31 日志管理 · 32 自动安装安全更新 |
+| 其他 | 99 重启服务器 · 101 命令行用法 · 102 卸载 Nimbus |
+
+## 重装系统
+
+基于 [leitbogioro/Tools InstallNET](https://github.com/leitbogioro/Tools)，使用各发行版的官方安装器。
+
+| 项目 | 选项 |
+|---|---|
+| 系统 | Debian 13 ★ / 12、Ubuntu 24.04 / 22.04、AlmaLinux 9、Rocky 9、Alpine edge |
+| root 密码 | 自定义（输入两次）；回车自动生成 16 位随机密码。可用字符 `A-Z a-z 0-9 @ # % + = : , . _ -`，6–64 位 |
+| SSH 端口 | 自定义，默认 22 |
+| 软 RAID | 检测到 ≥ 2 块硬盘时可选 RAID 0 / 1 / 5 / 6 / 10（Debian / AlmaLinux / Rocky） |
+
+- Alpine 的 root 密码由 InstallNET 固定为 `LeitboGi0ro`，装好后请立即修改。
+- **OVH 独服**用软 RAID 时，请先在 OVH 面板用官方模板、默认分区装一次系统，再执行重装，否则可能无法引导。
+- 执行前会汇总所有参数，需要输入 `yes` 确认。重装会清空硬盘。
+
+## BBRv3 加速
+
+- 从 XanMod 官方 APT 源安装 **LTS** 内核，按 CPU 指令集自动选择 `x64v1`–`x64v3`。
+- 拥塞控制 `bbr`（XanMod 内核中即 BBRv3），队列算法 `fq`，写入 `/etc/sysctl.d/99-nimbus-bbr.conf`。
+- 支持 Debian 12+ / Ubuntu 24.04+ 的 x86_64 机器，安装后需要重启。
+- **Proxmox VE 宿主机、容器、非 x86_64 或其他发行版不更换内核**，只开启内核自带的 BBR + fq，无需重启。PVE 的判断依据是 `pveversion` 命令、`/etc/pve` 目录或 `pve-manager` 软件包，与主机名无关。
+
+## 自动安装安全更新
+
+基于 `unattended-upgrades`，仅支持 Debian / Ubuntu（含 PVE 等衍生系统）；其他系统会提示不支持，不做任何改动。
+
+- **只装安全源的补丁**。系统默认策略还会安装普通稳定更新，开启后会被覆盖为仅安全更新。
+- **不自动重启**。有更新需要重启时，菜单会提示。
+- 不涉及 XanMod、Docker、PVE 等第三方源，PVE 的升级仍需手动 `apt dist-upgrade`。
+- 菜单可开启 / 关闭、模拟运行、立即执行一次、查看日志，并显示上次和下次运行时间。
+
+## TG-bot 监控预警
+
+- **资源监控**：CPU、内存、硬盘使用率和出入站流量超过阈值时，推送 Telegram 告警；由 systemd 服务 `tg-check-notify` 托管，无 systemd 的系统用 crontab。
+- **SSH 登录提醒**：通过 `/etc/ssh/sshrc` 触发，每次 SSH 登录都会推送通知。
+- Bot Token、Chat ID 和阈值在菜单中交互填写，保存在 `/etc/nimbus/tg-notify.conf`（权限 0600）。旧版部署会自动迁移，菜单中也可一键卸载。
+
+## 应用部署
+
+| 应用 | 入口 | 说明 |
+|---|---|---|
+| [Komari](https://github.com/komari-monitor/komari-agent) 探针 Agent | 开荒 20 | 填写面板地址、自动发现密钥和月流量重置日；国内机器默认通过加速镜像下载 |
+| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 21 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理 |
+| [XBoard-node](https://github.com/cedar2025/xboard-node) | 开荒 22 | 填写面板地址、Token、节点 ID，内核可选 xray（默认）或 sing-box；支持状态查看、升级、卸载 |
+
+## 文件与配置位置
+
+| 路径 | 说明 |
+|---|---|
+| `~/nimbus.sh`、`/usr/local/bin/nb` | 脚本与快捷命令 |
+| `/etc/nimbus/tg-notify.conf` | TG-bot 配置 |
+| `/etc/nimbus/wizard.state` | 新机开荒的执行记录与手动标记 |
+| `/etc/apt/apt.conf.d/52nimbus-security-only` | 自动安全更新策略 |
+| `/etc/sysctl.d/99-nimbus-bbr.conf` | BBR 设置 |
+
+国内 / IPv6 模式使用的 GitHub 代理，在 `nimbus.sh` 开头的 `gh_proxy_mirror` 变量中配置。
+
+<details>
+<summary>仓库结构</summary>
+
+```text
+nimbus/
+├── nimbus.sh                 主脚本
+├── CHANGELOG.md              更新日志（「脚本更新」中读取）
+├── TG-check-notify.sh        TG-bot 资源监控
+├── TG-SSH-check-notify.sh    TG-bot SSH 登录提醒
+├── Limiting_Shut_down1.sh    限流关机任务
+├── archive.key               XanMod 仓库签名备用密钥
+├── res/config/               fail2ban 规则（CentOS 系）、tmux 推荐配置
+├── docs/                     文档
+└── assets/                   README 资源
+```
+
+</details>

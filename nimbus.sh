@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.0"
+sh_v="1.2.1"
 
 
 gl_hui='\e[37m'
@@ -2301,8 +2301,11 @@ dd_xitong() {
 
 
 # 是否为 Proxmox VE 宿主机
+# 不依赖主机名：pveversion 命令、/etc/pve（pmxcfs）或已安装 pve-manager 任一满足即视为 PVE
 nb_is_pve() {
-	command -v pveversion >/dev/null 2>&1 || [ -d /etc/pve ]
+	command -v pveversion >/dev/null 2>&1 && return 0
+	[ -d /etc/pve ] && return 0
+	dpkg-query -W -f='${Status}' pve-manager 2>/dev/null | grep -q 'install ok installed'
 }
 
 # 不更换内核，只开启当前内核自带的 BBR + fq
@@ -5797,7 +5800,7 @@ nb_wz_status() {
 			v=$(awk '/^nameserver/{print $2}' /etc/resolv.conf 2>/dev/null | head -2 | paste -sd' ' -)
 			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="${v:-未知}" ;;
 		autosec)
-			if ! nb_secupd_os >/dev/null; then WZ_TEXT="仅支持 Debian / Ubuntu"
+			if ! nb_secupd_os >/dev/null; then WZ_NA=true; WZ_TEXT="不适用（仅支持 Debian / Ubuntu）"
 			elif nb_secupd_enabled && [ -f "$NB_UU_CONF" ]; then WZ_DONE=true; WZ_TEXT="已开启（仅安全更新）"
 			elif nb_secupd_enabled; then WZ_DONE=true; WZ_TEXT="已开启（系统默认策略）"
 			else WZ_TEXT="未开启"; fi
@@ -5826,8 +5829,11 @@ nb_wz_status() {
 			elif [ -f "$TG_NOTIFY_CONF" ]; then WZ_TEXT="已配置，监控未运行"
 			else WZ_TEXT="未配置"; fi ;;
 		lang)
-			v=$(localectl status 2>/dev/null | awk -F= '/LANG=/{print $2; exit}')
-			[ -n "$m" ] && WZ_DONE=true; WZ_TEXT="${v:-${LANG:-未知}}" ;;
+			v=$(sed -n 's/^LANG=["'\'']\{0,1\}\([^"'\'']*\).*/\1/p' /etc/default/locale /etc/locale.conf 2>/dev/null | head -n 1)
+			case "$v" in
+				""|C|C.UTF-8|C.utf8|POSIX) WZ_TEXT="${v:-未设置}" ; [ -n "$m" ] && WZ_DONE=true ;;
+				*) WZ_DONE=true; WZ_TEXT="$v" ;;
+			esac ;;
 		ps1)
 			if grep -qs '^# >>> nimbus PS1 >>>' "$HOME/.profile" "$HOME/.bashrc"; then WZ_DONE=true; WZ_TEXT="已设置"
 			elif grep -qs '^PS1=' "$HOME/.profile"; then WZ_TEXT="旧版设置，重新选择一次即可修复"
@@ -5877,17 +5883,43 @@ nb_wz_reboot_check() {
 	done
 }
 
+# 手动标记：done 标记完成 / undone 标记未完成 / skip 跳过；空值表示自动检测
+nb_wz_manual_get() {
+	grep "^$1\.m=" "$NB_WZ_STATE" 2>/dev/null | tail -1 | cut -d= -f2
+}
+
+nb_wz_manual_set() {
+	mkdir -p /etc/nimbus 2>/dev/null || return 0
+	{
+		grep -v "^$1\.m=" "$NB_WZ_STATE" 2>/dev/null
+		if [ -n "$2" ]; then echo "$1.m=$2"; fi
+	} > "$NB_WZ_STATE.tmp" || return 0
+	mv -f "$NB_WZ_STATE.tmp" "$NB_WZ_STATE"
+}
+
+# 自动检测结果叠加手动标记，设置 WZ_DONE / WZ_ICON_WARN / WZ_SKIP / WZ_NA / WZ_TEXT
+nb_wz_effective() {
+	local key="$1"
+	WZ_ICON_WARN=false; WZ_NA=false; WZ_SKIP=false
+	nb_wz_status "$key"
+	case "$(nb_wz_manual_get "$key")" in
+		done)   WZ_DONE=true; WZ_ICON_WARN=false; WZ_SKIP=false; WZ_TEXT="$WZ_TEXT（手动标记完成）" ;;
+		undone) WZ_DONE=false; WZ_ICON_WARN=false; WZ_TEXT="$WZ_TEXT（手动标记未完成）" ;;
+		skip)   WZ_SKIP=true; WZ_TEXT="已跳过 · $WZ_TEXT" ;;
+	esac
+}
+
 nb_wizard() {
 	root_use
-	local choice next next_title i key
+	local choice next next_title i key n cmd nums
 	local -a keys=("dd" "passwd" "update" "bbr" "reboot" "tz" "hostname" "hosts" "swap" "dns" "autosec" "sshkey" "sshport" "sudo" "f2b" "tmux" "tg" "lang" "ps1" "komari" "realm" "xboard")
-	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "自动安装安全更新                   " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "TG-bot 监控预警                    " "切换系统语言（可选）               " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
+	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "自动安装安全更新                   " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "TG-bot 监控预警（可选）            " "切换系统语言                       " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
 	local -a funcs=("dd_xitong" "nb_wz_passwd" "linux_update" "bbrv3" "nb_wz_reboot_check" "nb_timezone_menu" "nb_hostname_menu" "nb_hosts_menu" "nb_swap_menu" "set_dns_ui" "nb_security_updates" "sshkey_panel" "nb_ssh_port_menu" "nb_create_sudo_user" "fail2ban_panel" "tmux_setup" "tg_notify_menu" "linux_language" "shell_bianse" "komari_agent_menu" "realm_xwpf" "xboard_node_menu")
-	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "0" "1" "0" "1" "1" "1")
+	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "1" "0" "0" "1" "1" "1")
 	while true; do
 		clear
 		echo -e "${gl_cyan}新机开荒${gl_bai} · 按推荐顺序逐项完成，可随时退出，回来后继续（nb init）"
-		echo -e "${gl_hui}✔ 已完成  ○ 待处理  ⚠ 需注意；标注「可选」的按需执行${gl_bai}"
+		echo -e "${gl_hui}✔ 已完成  ○ 待处理  ⚠ 需注意  – 跳过/不适用；「可选」步骤不参与推荐${gl_bai}"
 		next=""
 		for i in "${!keys[@]}"; do
 			case $((i + 1)) in
@@ -5899,9 +5931,10 @@ nb_wizard() {
 				20) echo -e "${gl_cyan}【六 · 应用部署（按需）】${gl_bai}" ;;
 			esac
 			key="${keys[$i]}"
-			WZ_ICON_WARN=false
-			nb_wz_status "$key"
-			if [ "$WZ_ICON_WARN" = true ]; then
+			nb_wz_effective "$key"
+			if [ "$WZ_SKIP" = true ] || [ "$WZ_NA" = true ]; then
+				printf ' %b–%b ' "$gl_hui" "$gl_bai"
+			elif [ "$WZ_ICON_WARN" = true ]; then
 				printf ' %b⚠%b ' "$gl_huang" "$gl_bai"
 			elif [ "$WZ_DONE" = true ]; then
 				printf ' %b✔%b ' "$gl_lv" "$gl_bai"
@@ -5909,7 +5942,8 @@ nb_wizard() {
 				printf ' %b○%b ' "$gl_hui" "$gl_bai"
 			fi
 			printf '%b%-4s%b%s %b%s%b\n' "$gl_cyan" "$((i + 1))." "$gl_bai" "${titles[$i]}" "$gl_hui" "$WZ_TEXT" "$gl_bai"
-			if [ -z "$next" ] && [ "${opts[$i]}" != 1 ] && { [ "$WZ_DONE" != true ] || [ "$WZ_ICON_WARN" = true ]; }; then
+			if [ -z "$next" ] && [ "${opts[$i]}" != 1 ] && [ "$WZ_SKIP" != true ] && [ "$WZ_NA" != true ] &&
+				{ [ "$WZ_DONE" != true ] || [ "$WZ_ICON_WARN" = true ]; }; then
 				next=$((i + 1))
 			fi
 		done
@@ -5918,22 +5952,46 @@ nb_wizard() {
 			next_title=$(printf '%s' "${titles[$((next - 1))]}" | sed 's/[[:space:]]*$//')
 			echo -e "推荐下一步: ${gl_huang}${next}. ${next_title}${gl_bai}"
 		else
-			echo -e "${gl_lv}必做步骤已全部完成${gl_bai}，可按需部署 20-22 项应用"
+			echo -e "${gl_lv}必做步骤已全部完成${gl_bai}，可选步骤按需执行"
 		fi
 		echo "------------------------------------------------"
-		echo "n. 执行推荐的下一步          r. 清除执行记录"
+		echo "编号. 执行该步骤          n. 执行推荐的下一步       s. 跳过推荐的这一步"
+		echo "m 编号. 切换完成/未完成   a 编号. 恢复自动检测      r. 清除全部记录"
+		echo -e "${gl_hui}m、a 可带多个编号，如 m 3 6 9${gl_bai}"
 		echo "0. 返回主菜单"
 		echo "------------------------------------------------"
-		read -r -e -p "请输入步骤编号: " choice
-		case "$choice" in
-			n|N) [ -n "$next" ] || continue; choice="$next" ;;
-			r|R) rm -f "$NB_WZ_STATE"; continue ;;
-			0|"") break ;;
+		read -r -e -p "请输入步骤编号或命令: " choice
+		cmd=$(printf '%s' "$choice" | sed -E 's/^[[:space:]]*([a-zA-Z]?).*/\1/' | tr '[:upper:]' '[:lower:]')
+		nums=$(printf '%s' "$choice" | sed -E 's/^[[:space:]]*[a-zA-Z]?//')
+		case "$cmd" in
+			n) [ -n "$next" ] || continue; choice="$next" ;;
+			s) [ -n "$next" ] && nb_wz_manual_set "${keys[$((next - 1))]}" skip; continue ;;
+			r) rm -f "$NB_WZ_STATE"; continue ;;
+			m|a)
+				for n in $nums; do
+					[[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le "${#keys[@]}" ] || continue
+					key="${keys[$((n - 1))]}"
+					if [ "$cmd" = a ]; then
+						nb_wz_manual_set "$key" ""
+					else
+						nb_wz_effective "$key"
+						if [ "$WZ_DONE" = true ] && [ "$WZ_ICON_WARN" != true ] && [ "$WZ_SKIP" != true ]; then
+							nb_wz_manual_set "$key" undone
+						else
+							nb_wz_manual_set "$key" "done"
+						fi
+					fi
+				done
+				continue
+				;;
 		esac
+		case "$choice" in 0|"") break ;; esac
 		if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#keys[@]}" ]; then
 			clear
+			key="${keys[$((choice - 1))]}"
 			"${funcs[$((choice - 1))]}"
-			nb_wz_mark "${keys[$((choice - 1))]}"
+			nb_wz_mark "$key"
+			nb_wz_manual_set "$key" ""
 			break_end
 		fi
 	done
