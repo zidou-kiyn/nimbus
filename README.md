@@ -1,63 +1,136 @@
-<h1 align="center">kejilion.sh（精简版）</h1>
-
 <p align="center">
-  面向 Linux 服务器的脚本工具箱，fork 自
-  <a href="https://github.com/kejilion/sh">kejilion/sh</a>，去除遥测与外部依赖后精简维护。
+  <img src="assets/logo.svg" alt="Nimbus" width="460">
 </p>
 
 <p align="center">
-  <a href="https://github.com/zidou-kiyn/sh/commits/main"><img src="https://img.shields.io/github/last-commit/zidou-kiyn/sh?style=flat-square" alt="Last Commit"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square" alt="Apache-2.0 License"></a>
+  <b>轻量、干净的 Linux 云服务器工具箱</b><br>
+  <sub>一条命令管理系统、网络、Docker 与安全 · 无遥测 · 无广告</sub>
 </p>
 
-## 一键安装
+<p align="center">
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.0-6366f1?style=flat-square" alt="version"></a>
+  <img src="https://img.shields.io/badge/shell-bash-38bdf8?style=flat-square&logo=gnubash&logoColor=white" alt="bash">
+  <img src="https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20RHEL%20%7C%20Alpine-0ea5e9?style=flat-square&logo=linux&logoColor=white" alt="platform">
+  <a href="https://github.com/zidou-kiyn/nimbus/commits/main"><img src="https://img.shields.io/github/last-commit/zidou-kiyn/nimbus?style=flat-square&color=818cf8" alt="last commit"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-64748b?style=flat-square" alt="license"></a>
+</p>
 
-使用 `root` 用户执行：
+<p align="center">
+  <a href="#-快速开始">快速开始</a> ·
+  <a href="#-功能一览">功能一览</a> ·
+  <a href="#-命令行速查">命令行速查</a> ·
+  <a href="#-bbrv3-加速">BBRv3</a> ·
+  <a href="#-项目结构">项目结构</a>
+</p>
+
+---
+
+## 🚀 快速开始
+
+以 `root` 身份执行：
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh)
+bash <(curl -sL https://raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh)
 ```
 
-国内服务器可通过 GitHub 代理下载：
+<details>
+<summary>国内服务器（通过 GitHub 代理）</summary>
 
 ```bash
-bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh)
+bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh)
 ```
 
-运行后会安装 `k` 快捷命令，之后直接输入 `k` 即可打开主菜单，`k help` 查看命令行用法。
+</details>
 
-> [!IMPORTANT]
-> 脚本包含软件安装、网络、防火墙、磁盘等系统级操作。
-> 请在执行前阅读终端提示，并提前备份重要数据、容器和配置。
+首次运行后会安装快捷命令 **`nb`**，以后直接输入 `nb` 打开主菜单。
 
-## 功能
+```text
+╔╗╔╦╔╦╗╔╗ ╦ ╦╔═╗
+║║║║║║║╠╩╗║ ║╚═╗
+╝╚╝╩╩ ╩╚═╝╚═╝╚═╝
+Nimbus · 云服务器工具箱 v1.0.0
+------------------------
+1.   系统信息查询
+2.   系统更新
+3.   系统清理
+4.   基础工具
+5.   BBRv3加速
+6.   Docker管理
+7.   测试脚本合集
+8.   系统工具
+------------------------
+00.  脚本更新
+0.   退出脚本
+```
 
-- **系统信息与维护**：系统信息、更新、清理、基础工具安装、BBR/BBRv3、内核参数优化、一条龙调优。
-- **网络与测试**：测速、回程路由、流媒体解锁等测试脚本合集，WARP 管理。
-- **Docker 管理**：容器、镜像、网络、存储卷管理，备份/迁移/还原。
-- **应用市场**：一键安装和管理常用面板、服务与 AI 工具，支持 `~/apps-local` 本地自建应用。
-- **系统工具**：防火墙、fail2ban、SSH、虚拟内存、时区、DNS、硬盘、rsync、定时任务、限流关机等。
-- **后台工作区与集群控制**：tmux 后台任务，多服务器批量执行。
+> [!WARNING]
+> 脚本会执行软件安装、内核更换、防火墙、磁盘等系统级操作。请先阅读终端提示，生产环境操作前做好备份。
 
-## 与上游的差异
+## 🧰 功能一览
 
-相对上游 v4.5.14 移除了以下内容，详见 [更新日志](kejilion_sh_log.txt)：
-
-- 遥测/数据采集、首次运行许可协议、广告专栏与外部宣传链接
-- KPanel 面板及其协议接口
-- LDNMP 建站（证书申请与续签、WAF、反向代理、站点管理）及依赖域名反代的应用
-- 多语言版本、游戏开服脚本
-
-脚本更新、应用市场与配置资源全部从本仓库获取，不再访问 kejilion 的服务器：
-
-| 目录 | 内容 |
+| 模块 | 内容 |
 |---|---|
-| `kejilion.sh` | 主脚本 |
-| `apps/` | 应用市场配置，见 [说明](apps/README.md) |
-| `res/` | 部分应用使用的 compose、fail2ban、prometheus 等配置 |
+| **系统信息** | CPU、内存、磁盘、网络流量、地理位置、运行时长等概览 |
+| **系统更新 / 清理** | 自动识别 apt / dnf / yum / apk / pacman 等包管理器 |
+| **基础工具** | curl、wget、htop、btop、tmux、ffmpeg、vim、nano、git 等一键安装与卸载 |
+| **BBRv3 加速** | XanMod LTS 内核 + BBRv3 + fq，见 [下文](#-bbrv3-加速) |
+| **Docker 管理** | 安装与换源、容器 / 镜像 / 网络 / 卷管理、IPv6、备份 / 迁移 / 还原 |
+| **测试脚本** | 流媒体解锁、IP 质量、三网回程路由、测速、yabs / GB5 / 融合怪性能测试 |
 
-国内/IPv6 模式使用的 GitHub 代理在脚本开头的 `gh_proxy_mirror` 变量中配置。
+**系统工具**
 
-## 开源许可
+| 分组 | 功能 |
+|---|---|
+| 账号与登录 | 修改密码、密码 / 密钥登录模式、禁用 root 并新建账户、用户管理、密码生成器 |
+| 网络 | 开放端口、修改 SSH 端口、DNS 优化、IPv4/IPv6 优先、端口占用、防火墙、hosts、网卡管理 |
+| 系统 | 一键重装系统、虚拟内存、时区、BBRv3、主机名、更新源、定时任务、系统语言、环境变量 |
+| 安全与运维 | SSH 防御（fail2ban）、限流自动关机、TG-bot 监控预警、命令行美化、系统备份与恢复、硬盘分区、命令历史、日志管理 |
 
-本项目基于 [kejilion/sh](https://github.com/kejilion/sh) 修改，沿用 [Apache License 2.0](LICENSE)。
+## ⌨️ 命令行速查
+
+| 命令 | 说明 |
+|---|---|
+| `nb` | 打开主菜单 |
+| `nb info` | 系统信息 |
+| `nb update` / `nb clean` | 更新系统 / 清理垃圾 |
+| `nb install <包…>` / `nb remove <包…>` | 安装 / 卸载软件包 |
+| `nb bbr3` | BBRv3 加速 |
+| `nb docker [install\|ps\|img]` | Docker 管理 / 安装 / 容器 / 镜像 |
+| `nb swap 2048` | 设置虚拟内存（MB） |
+| `nb time Asia/Shanghai` | 设置时区 |
+| `nb fhq` | 防火墙面板 |
+| `nb dkdk <端口>` / `nb gbdk <端口>` | 开放 / 关闭端口 |
+| `nb fxip <IP>` / `nb zzip <IP>` | 放行 / 阻止 IP |
+| `nb f2b` | fail2ban SSH 防御 |
+| `nb sshkey [<url>\|github <用户>]` | 导入 SSH 公钥 |
+| `nb backup` / `nb disk` | 系统备份 / 硬盘管理 |
+| `nb dd` | 一键重装系统 |
+| `nb start\|stop\|restart\|status\|enable <服务>` | 服务管理 |
+| `nb help` | 显示全部用法 |
+
+## ⚡ BBRv3 加速
+
+- 从 XanMod 官方 APT 源安装 **LTS** 内核，按 CPU 指令集自动选择 `x64v1`–`x64v3` 包
+- 拥塞控制 `bbr`（XanMod 内核即 BBRv3），队列算法 `fq`，写入 `/etc/sysctl.d/99-nimbus-bbr.conf`
+- 支持 Debian 12+ / Ubuntu 24.04+，x86_64；安装后需重启
+
+## 📁 项目结构
+
+```text
+nimbus/
+├── nimbus.sh                 主脚本
+├── CHANGELOG.md              更新日志（脚本内「脚本更新」读取）
+├── Limiting_Shut_down1.sh    限流关机任务
+├── TG-check-notify.sh        TG-bot 资源监控
+├── TG-SSH-check-notify.sh    TG-bot SSH 登录提醒
+├── archive.key               XanMod 仓库签名备用密钥
+├── res/config/fail2ban/      fail2ban 规则（CentOS 系）
+├── assets/                   README 资源
+└── NOTICE                    上游出处声明
+```
+
+国内 / IPv6 模式使用的 GitHub 代理在 `nimbus.sh` 开头的 `gh_proxy_mirror` 变量中配置。
+
+## 📄 许可
+
+[Apache License 2.0](LICENSE)。本项目基于 [kejilion/sh](https://github.com/kejilion/sh) 修改，详见 [NOTICE](NOTICE)。

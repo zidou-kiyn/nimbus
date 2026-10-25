@@ -1,5 +1,7 @@
 #!/bin/bash
-sh_v="4.5.14"
+# Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
+# Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
+sh_v="1.0.0"
 
 
 gl_hui='\e[37m'
@@ -9,7 +11,7 @@ gl_huang='\033[33m'
 gl_lan='\033[34m'
 gl_bai='\033[0m'
 gl_zi='\033[35m'
-gl_kjlan='\033[96m'
+gl_cyan='\033[96m'
 
 
 canshu="default"
@@ -39,10 +41,10 @@ quanju_canshu
 
 
 canshu_v6() {
-	if grep -q '^canshu="V6"' /usr/local/bin/k > /dev/null 2>&1; then
-		sed -i 's/^canshu="default"/canshu="V6"/' ~/kejilion.sh
-	elif grep -q '^canshu="V6"' ~/kejilion.sh.bak > /dev/null 2>&1; then
-		sed -i 's/^canshu="default"/canshu="V6"/' ~/kejilion.sh
+	if grep -q '^canshu="V6"' /usr/local/bin/nb > /dev/null 2>&1; then
+		sed -i 's/^canshu="default"/canshu="V6"/' ~/nimbus.sh
+	elif grep -q '^canshu="V6"' ~/nimbus.sh.bak > /dev/null 2>&1; then
+		sed -i 's/^canshu="default"/canshu="V6"/' ~/nimbus.sh
 	fi
 }
 
@@ -50,12 +52,9 @@ canshu_v6() {
 
 canshu_v6
 
-sed -i '/^alias k=/d' ~/.bashrc > /dev/null 2>&1
-sed -i '/^alias k=/d' ~/.profile > /dev/null 2>&1
-sed -i '/^alias k=/d' ~/.bash_profile > /dev/null 2>&1
-cp -f ./kejilion.sh ~/kejilion.sh > /dev/null 2>&1
-cp -f ~/kejilion.sh /usr/local/bin/k > /dev/null 2>&1
-ln -sf /usr/local/bin/k /usr/bin/k > /dev/null 2>&1
+cp -f ./nimbus.sh ~/nimbus.sh > /dev/null 2>&1
+cp -f ~/nimbus.sh /usr/local/bin/nb > /dev/null 2>&1
+ln -sf /usr/local/bin/nb /usr/bin/nb > /dev/null 2>&1
 
 
 
@@ -97,7 +96,7 @@ install() {
 
 	for package in "$@"; do
 		if ! command -v "$package" &>/dev/null; then
-			echo -e "${gl_kjlan}正在安装 $package...${gl_bai}"
+			echo -e "${gl_cyan}正在安装 $package...${gl_bai}"
 			if command -v dnf &>/dev/null; then
 				dnf -y update
 				dnf install -y epel-release
@@ -148,7 +147,7 @@ check_disk_space() {
 		echo "最小需求空间: ${required_gb}G"
 		echo "无法继续安装，请清理磁盘空间后重试。"
 		break_end
-		kejilion
+		nimbus_home
 	fi
 }
 
@@ -161,7 +160,7 @@ remove() {
 	fi
 
 	for package in "$@"; do
-		echo -e "${gl_kjlan}正在卸载 $package...${gl_bai}"
+		echo -e "${gl_cyan}正在卸载 $package...${gl_bai}"
 		if command -v dnf &>/dev/null; then
 			dnf remove -y "$package"
 		elif command -v yum &>/dev/null; then
@@ -261,9 +260,9 @@ break_end() {
 	  clear
 }
 
-kejilion() {
+nimbus_home() {
 			cd ~
-			kejilion_sh
+			nimbus_main
 }
 
 
@@ -335,7 +334,7 @@ install_add_docker_cn
 
 
 install_add_docker() {
-	echo -e "${gl_kjlan}正在安装docker环境...${gl_bai}"
+	echo -e "${gl_cyan}正在安装docker环境...${gl_bai}"
 	if command -v apt &>/dev/null || command -v yum &>/dev/null || command -v dnf &>/dev/null; then
 		linuxmirrors_install_docker
 	else
@@ -496,14 +495,14 @@ while true; do
 		1)
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames
 			for name in $imagenames; do
-				echo -e "${gl_kjlan}正在获取镜像: $name${gl_bai}"
+				echo -e "${gl_cyan}正在获取镜像: $name${gl_bai}"
 				docker pull $name
 			done
 			;;
 		2)
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames
 			for name in $imagenames; do
-				echo -e "${gl_kjlan}正在更新镜像: $name${gl_bai}"
+				echo -e "${gl_cyan}正在更新镜像: $name${gl_bai}"
 				docker pull $name
 			done
 			;;
@@ -1346,7 +1345,7 @@ f2b_install_sshd() {
 		cd /etc/fail2ban/jail.d/
 		curl --fail --silent --show-error --location \
 			--output centos-ssh.conf \
-			"${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/res/config/fail2ban/centos-ssh.conf" || return 1
+			"${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/res/config/fail2ban/centos-ssh.conf" || return 1
 		if [ ! -e /var/log/secure ]; then
 			touch /var/log/secure || return 1
 			chmod 0600 /var/log/secure || return 1
@@ -1421,7 +1420,7 @@ f2b_basic_config() {
 	mkdir -p /etc/fail2ban/jail.d
 	cat > /etc/fail2ban/jail.d/sshd.local <<EOF
 [$jail_name]
-# Managed by kejilion.sh
+# Managed by nimbus
 # Note: enable the jail so these parameters take effect
 enabled = true
 bantime = $bantime
@@ -1510,15 +1509,6 @@ output_status() {
 
 
 
-#!/bin/bash
-# frpc 增强功能模块 - 从 kejilion.sh 4.4.10-cong86.1 提取
-# 包含: configure_frpc, 辅助校验函数, add_forwarding_service,
-#       delete_forwarding_service, list_forwarding_services,
-#       sort_forwarding_services_by_remote_port, frpc_panel
-
-
-
-# 获取 FRP 服务端端口
 
 
 
@@ -1554,7 +1544,7 @@ fix_dpkg() {
 
 
 linux_update() {
-	echo -e "${gl_kjlan}正在系统更新...${gl_bai}"
+	echo -e "${gl_cyan}正在系统更新...${gl_bai}"
 	if command -v dnf &>/dev/null; then
 		dnf -y update
 	elif command -v yum &>/dev/null; then
@@ -1581,7 +1571,7 @@ linux_update() {
 
 
 linux_clean() {
-	echo -e "${gl_kjlan}正在系统清理...${gl_bai}"
+	echo -e "${gl_cyan}正在系统清理...${gl_bai}"
 	if command -v dnf &>/dev/null; then
 		rpm --rebuilddb
 		dnf autoremove -y
@@ -1661,7 +1651,7 @@ linux_clean() {
 bbr_on() {
 
 # BBR + fq 统一写入 sysctl.d
-local CONF="/etc/sysctl.d/99-kejilion-bbr.conf"
+local CONF="/etc/sysctl.d/99-nimbus-bbr.conf"
 mkdir -p /etc/sysctl.d
 echo "net.core.default_qdisc=fq" > "$CONF"
 echo "net.ipv4.tcp_congestion_control=bbr" >> "$CONF"
@@ -2102,7 +2092,7 @@ add_sshpasswd() {
 
 root_use() {
 clear
-[ "$EUID" -ne 0 ] && echo -e "${gl_huang}提示: ${gl_bai}该功能需要root用户才能运行！" && break_end && kejilion
+[ "$EUID" -ne 0 ] && echo -e "${gl_huang}提示: ${gl_bai}该功能需要root用户才能运行！" && break_end && nimbus_home
 }
 
 
@@ -2411,7 +2401,7 @@ bbrv3() {
 				local keyring="/usr/share/keyrings/xanmod-archive-keyring.gpg"
 				local list_file="/etc/apt/sources.list.d/xanmod-release.list"
 				local key_url="https://dl.xanmod.org/archive.key"
-				local fallback_key_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/archive.key"
+				local fallback_key_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/archive.key"
 				local os_codename=""
 
 				if command -v lsb_release >/dev/null 2>&1; then
@@ -2918,57 +2908,57 @@ linux_backup() {
 
 
 # SSH 输入标准化函数
-kj_ssh_validate_host() {
+nb_ssh_validate_host() {
 	local host="$1"
 	[[ -n "$host" && ! "$host" =~ [[:space:]] && "$host" =~ ^[A-Za-z0-9._:-]+$ ]]
 }
 
-kj_ssh_validate_port() {
+nb_ssh_validate_port() {
 	local port="$1"
 	[[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]
 }
 
-kj_ssh_validate_user() {
+nb_ssh_validate_user() {
 	local user="$1"
 	[[ -n "$user" && "$user" =~ ^[A-Za-z_][A-Za-z0-9._-]*$ ]]
 }
 
-kj_ssh_read_host_port() {
+nb_ssh_read_host_port() {
 	local host_prompt="$1"
 	local port_prompt="$2"
 	local default_port="${3:-22}"
 
 	while true; do
-		read -e -p "$host_prompt" KJ_SSH_HOST
-		if kj_ssh_validate_host "$KJ_SSH_HOST"; then
+		read -e -p "$host_prompt" NB_SSH_HOST
+		if nb_ssh_validate_host "$NB_SSH_HOST"; then
 			break
 		fi
 		echo "错误: 请输入有效的服务器地址。"
 	done
 
 	while true; do
-		read -e -p "$port_prompt" KJ_SSH_PORT
-		KJ_SSH_PORT=${KJ_SSH_PORT:-$default_port}
-		if kj_ssh_validate_port "$KJ_SSH_PORT"; then
+		read -e -p "$port_prompt" NB_SSH_PORT
+		NB_SSH_PORT=${NB_SSH_PORT:-$default_port}
+		if nb_ssh_validate_port "$NB_SSH_PORT"; then
 			break
 		fi
 		echo "错误: 端口必须是 1-65535 之间的数字。"
 	done
 }
 
-kj_ssh_read_host_user_port() {
+nb_ssh_read_host_user_port() {
 	local host_prompt="$1"
 	local user_prompt="$2"
 	local port_prompt="$3"
 	local default_user="${4:-root}"
 	local default_port="${5:-22}"
 
-	kj_ssh_read_host_port "$host_prompt" "$port_prompt" "$default_port"
+	nb_ssh_read_host_port "$host_prompt" "$port_prompt" "$default_port"
 
 	while true; do
-		read -e -p "$user_prompt" KJ_SSH_USER
-		KJ_SSH_USER=${KJ_SSH_USER:-$default_user}
-		if kj_ssh_validate_user "$KJ_SSH_USER"; then
+		read -e -p "$user_prompt" NB_SSH_USER
+		NB_SSH_USER=${NB_SSH_USER:-$default_user}
+		if nb_ssh_validate_user "$NB_SSH_USER"; then
 			break
 		fi
 		echo "错误: 用户名格式不正确。"
@@ -3169,7 +3159,7 @@ linux_info() {
 
 
 	clear
-	echo -e "${gl_kjlan}正在查询系统信息……${gl_bai}"
+	echo -e "${gl_cyan}正在查询系统信息……${gl_bai}"
 
 	ip_address
 
@@ -3222,41 +3212,41 @@ linux_info() {
 
 	clear
 	echo -e "系统信息查询"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}主机名:         ${gl_bai}$hostname"
-	echo -e "${gl_kjlan}系统版本:       ${gl_bai}$os_info"
-	echo -e "${gl_kjlan}Linux版本:      ${gl_bai}$kernel_version"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}CPU架构:        ${gl_bai}$cpu_arch"
-	echo -e "${gl_kjlan}CPU型号:        ${gl_bai}$cpu_info"
-	echo -e "${gl_kjlan}CPU核心数:      ${gl_bai}$cpu_cores"
-	echo -e "${gl_kjlan}CPU频率:        ${gl_bai}$cpu_freq"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}CPU占用:        ${gl_bai}$cpu_usage_percent%"
-	echo -e "${gl_kjlan}系统负载:       ${gl_bai}$load"
-	echo -e "${gl_kjlan}TCP|UDP连接数:  ${gl_bai}$tcp_count|$udp_count"
-	echo -e "${gl_kjlan}物理内存:       ${gl_bai}$mem_info"
-	echo -e "${gl_kjlan}虚拟内存:       ${gl_bai}$swap_info"
-	echo -e "${gl_kjlan}硬盘占用:       ${gl_bai}$disk_info"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}总接收:         ${gl_bai}$rx"
-	echo -e "${gl_kjlan}总发送:         ${gl_bai}$tx"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}网络算法:       ${gl_bai}$congestion_algorithm $queue_algorithm"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}运营商:         ${gl_bai}$isp_info"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}主机名:         ${gl_bai}$hostname"
+	echo -e "${gl_cyan}系统版本:       ${gl_bai}$os_info"
+	echo -e "${gl_cyan}Linux版本:      ${gl_bai}$kernel_version"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}CPU架构:        ${gl_bai}$cpu_arch"
+	echo -e "${gl_cyan}CPU型号:        ${gl_bai}$cpu_info"
+	echo -e "${gl_cyan}CPU核心数:      ${gl_bai}$cpu_cores"
+	echo -e "${gl_cyan}CPU频率:        ${gl_bai}$cpu_freq"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}CPU占用:        ${gl_bai}$cpu_usage_percent%"
+	echo -e "${gl_cyan}系统负载:       ${gl_bai}$load"
+	echo -e "${gl_cyan}TCP|UDP连接数:  ${gl_bai}$tcp_count|$udp_count"
+	echo -e "${gl_cyan}物理内存:       ${gl_bai}$mem_info"
+	echo -e "${gl_cyan}虚拟内存:       ${gl_bai}$swap_info"
+	echo -e "${gl_cyan}硬盘占用:       ${gl_bai}$disk_info"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}总接收:         ${gl_bai}$rx"
+	echo -e "${gl_cyan}总发送:         ${gl_bai}$tx"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}网络算法:       ${gl_bai}$congestion_algorithm $queue_algorithm"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}运营商:         ${gl_bai}$isp_info"
 	if [ -n "$ipv4_address" ]; then
-		echo -e "${gl_kjlan}IPv4地址:       ${gl_bai}$ipv4_address"
+		echo -e "${gl_cyan}IPv4地址:       ${gl_bai}$ipv4_address"
 	fi
 
 	if [ -n "$ipv6_address" ]; then
-		echo -e "${gl_kjlan}IPv6地址:       ${gl_bai}$ipv6_address"
+		echo -e "${gl_cyan}IPv6地址:       ${gl_bai}$ipv6_address"
 	fi
-	echo -e "${gl_kjlan}DNS地址:        ${gl_bai}$dns_addresses"
-	echo -e "${gl_kjlan}地理位置:       ${gl_bai}$country $city"
-	echo -e "${gl_kjlan}系统时间:       ${gl_bai}$timezone $current_time"
-	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}运行时长:       ${gl_bai}$runtime"
+	echo -e "${gl_cyan}DNS地址:        ${gl_bai}$dns_addresses"
+	echo -e "${gl_cyan}地理位置:       ${gl_bai}$country $city"
+	echo -e "${gl_cyan}系统时间:       ${gl_bai}$timezone $current_time"
+	echo -e "${gl_cyan}-------------"
+	echo -e "${gl_cyan}运行时长:       ${gl_bai}$runtime"
 	echo
 
 
@@ -3299,7 +3289,7 @@ linux_tools() {
 	  fi
 
 	  echo "📦 使用包管理器: $PM"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
+	  echo -e "${gl_cyan}------------------------${gl_bai}"
 
 	  for ((i=0; i<${#tools[@]}; i+=2)); do
 		# 左列
@@ -3322,24 +3312,24 @@ linux_tools() {
 		fi
 	  done
 
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}curl 下载工具 ${gl_huang}★${gl_bai}                   ${gl_kjlan}2.   ${gl_bai}wget 下载工具 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}sudo 超级管理权限工具             ${gl_kjlan}4.   ${gl_bai}socat 通信连接工具"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}htop 系统监控工具                 ${gl_kjlan}6.   ${gl_bai}iftop 网络流量监控工具"
-	  echo -e "${gl_kjlan}7.   ${gl_bai}unzip ZIP压缩解压工具             ${gl_kjlan}8.   ${gl_bai}tar GZ压缩解压工具"
-	  echo -e "${gl_kjlan}9.   ${gl_bai}tmux 多路后台运行工具             ${gl_kjlan}10.  ${gl_bai}ffmpeg 视频编码直播推流工具"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}btop 现代化监控工具 ${gl_huang}★${gl_bai}             ${gl_kjlan}12.  ${gl_bai}ranger 文件管理工具"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}ncdu 磁盘占用查看工具             ${gl_kjlan}14.  ${gl_bai}fzf 全局搜索工具"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}vim 文本编辑器                    ${gl_kjlan}16.  ${gl_bai}nano 文本编辑器 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}17.  ${gl_bai}git 版本控制系统"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}31.  ${gl_bai}全部安装 ${gl_huang}★${gl_bai}                        ${gl_kjlan}32.  ${gl_bai}全部卸载"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}41.  ${gl_bai}安装指定工具                      ${gl_kjlan}42.  ${gl_bai}卸载指定工具"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}1.   ${gl_bai}curl 下载工具 ${gl_huang}★${gl_bai}                   ${gl_cyan}2.   ${gl_bai}wget 下载工具 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}3.   ${gl_bai}sudo 超级管理权限工具             ${gl_cyan}4.   ${gl_bai}socat 通信连接工具"
+	  echo -e "${gl_cyan}5.   ${gl_bai}htop 系统监控工具                 ${gl_cyan}6.   ${gl_bai}iftop 网络流量监控工具"
+	  echo -e "${gl_cyan}7.   ${gl_bai}unzip ZIP压缩解压工具             ${gl_cyan}8.   ${gl_bai}tar GZ压缩解压工具"
+	  echo -e "${gl_cyan}9.   ${gl_bai}tmux 多路后台运行工具             ${gl_cyan}10.  ${gl_bai}ffmpeg 视频编码直播推流工具"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}11.  ${gl_bai}btop 现代化监控工具 ${gl_huang}★${gl_bai}             ${gl_cyan}12.  ${gl_bai}ranger 文件管理工具"
+	  echo -e "${gl_cyan}13.  ${gl_bai}ncdu 磁盘占用查看工具             ${gl_cyan}14.  ${gl_bai}fzf 全局搜索工具"
+	  echo -e "${gl_cyan}15.  ${gl_bai}vim 文本编辑器                    ${gl_cyan}16.  ${gl_bai}nano 文本编辑器 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}17.  ${gl_bai}git 版本控制系统"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}31.  ${gl_bai}全部安装 ${gl_huang}★${gl_bai}                        ${gl_cyan}32.  ${gl_bai}全部卸载"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}41.  ${gl_bai}安装指定工具                      ${gl_cyan}42.  ${gl_bai}卸载指定工具"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}0.   ${gl_bai}返回主菜单"
+	  echo -e "${gl_cyan}------------------------${gl_bai}"
 	  read -e -p "请输入你的选择: " sub_choice
 
 	  case $sub_choice in
@@ -3492,7 +3482,7 @@ linux_tools() {
 			  ;;
 
 		  0)
-			  kejilion
+			  nimbus_home
 			  ;;
 
 		  *)
@@ -3522,7 +3512,7 @@ docker_ssh_migration() {
 
 	list_backups() {
 		local BACKUP_ROOT="/tmp"
-		echo -e "${gl_kjlan}当前备份列表:${gl_bai}"
+		echo -e "${gl_cyan}当前备份列表:${gl_bai}"
 		ls -1dt ${BACKUP_ROOT}/docker_backup_* 2>/dev/null || echo "无备份"
 	}
 
@@ -3533,7 +3523,7 @@ docker_ssh_migration() {
 	# ----------------------------
 	backup_docker() {
 
-		echo -e "${gl_kjlan}正在备份 Docker 容器...${gl_bai}"
+		echo -e "${gl_cyan}正在备份 Docker 容器...${gl_bai}"
 		docker ps --format '{{.Names}}'
 		read -e -p  "请输入要备份的容器名（多个空格分隔，回车备份全部运行中容器）: " containers
 
@@ -3567,7 +3557,7 @@ docker_ssh_migration() {
 			docker inspect "$c" > "$inspect_file"
 
 			if is_compose_container "$c"; then
-				echo -e "${gl_kjlan}检测到 $c 是 docker-compose 容器${gl_bai}"
+				echo -e "${gl_cyan}检测到 $c 是 docker-compose 容器${gl_bai}"
 				local project_dir=$(docker inspect "$c" | jq -r '.[0].Config.Labels["com.docker.compose.project.working_dir"] // empty')
 				local project_name=$(docker inspect "$c" | jq -r '.[0].Config.Labels["com.docker.compose.project"] // empty')
 
@@ -3627,7 +3617,7 @@ docker_ssh_migration() {
 
 		# 备份 /home/docker 下的所有文件（不含子目录）
 		if [ -d "/home/docker" ]; then
-			echo -e "${gl_kjlan}备份 /home/docker 下的文件...${gl_bai}"
+			echo -e "${gl_cyan}备份 /home/docker 下的文件...${gl_bai}"
 			find /home/docker -maxdepth 1 -type f | tar -czf "${BACKUP_DIR}/home_docker_files.tar.gz" -T -
 			echo -e "${gl_lv}/home/docker 下的文件已打包到: ${BACKUP_DIR}/home_docker_files.tar.gz${gl_bai}"
 		fi
@@ -3647,7 +3637,7 @@ docker_ssh_migration() {
 		read -e -p  "请输入要还原的备份目录: " BACKUP_DIR
 		[[ ! -d "$BACKUP_DIR" ]] && { echo -e "${gl_hong}备份目录不存在${gl_bai}"; return; }
 
-		echo -e "${gl_kjlan}开始执行还原操作...${gl_bai}"
+		echo -e "${gl_cyan}开始执行还原操作...${gl_bai}"
 
 		install tar jq gzip
 		install_docker
@@ -3683,7 +3673,7 @@ docker_ssh_migration() {
 		done
 
 		# --------- 继续还原普通容器 ---------
-		echo -e "${gl_kjlan}检查并还原普通 Docker 容器...${gl_bai}"
+		echo -e "${gl_cyan}检查并还原普通 Docker 容器...${gl_bai}"
 		local has_container=false
 		for json in "$BACKUP_DIR"/*_inspect.json; do
 			[[ ! -f "$json" ]] && continue
@@ -3745,7 +3735,7 @@ docker_ssh_migration() {
 
 		# 还原 /home/docker 下的文件
 		if [ -f "$BACKUP_DIR/home_docker_files.tar.gz" ]; then
-			echo -e "${gl_kjlan}正在还原 /home/docker 下的文件...${gl_bai}"
+			echo -e "${gl_cyan}正在还原 /home/docker 下的文件...${gl_bai}"
 			mkdir -p /home/docker
 			tar -xzf "$BACKUP_DIR/home_docker_files.tar.gz" -C /
 			echo -e "${gl_lv}/home/docker 下的文件已还原完成${gl_bai}"
@@ -3765,10 +3755,10 @@ docker_ssh_migration() {
 		read -e -p  "请输入要迁移的备份目录: " BACKUP_DIR
 		[[ ! -d "$BACKUP_DIR" ]] && { echo -e "${gl_hong}备份目录不存在${gl_bai}"; return; }
 
-		kj_ssh_read_host_user_port "目标服务器IP: " "目标服务器SSH用户名 [默认root]: " "目标服务器SSH端口 [默认22]: " "root" "22"
-		local TARGET_IP="$KJ_SSH_HOST"
-		local TARGET_USER="$KJ_SSH_USER"
-		local TARGET_PORT="$KJ_SSH_PORT"
+		nb_ssh_read_host_user_port "目标服务器IP: " "目标服务器SSH用户名 [默认root]: " "目标服务器SSH端口 [默认22]: " "root" "22"
+		local TARGET_IP="$NB_SSH_HOST"
+		local TARGET_USER="$NB_SSH_USER"
+		local TARGET_PORT="$NB_SSH_PORT"
 
 		local LATEST_TAR="$BACKUP_DIR"
 
@@ -3833,29 +3823,29 @@ linux_docker() {
 	  clear
 	  echo -e "Docker管理"
 	  docker_tato
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}安装更新Docker环境 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}2.   ${gl_bai}查看Docker全局状态 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}Docker容器管理 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}4.   ${gl_bai}Docker镜像管理"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}Docker网络管理"
-	  echo -e "${gl_kjlan}6.   ${gl_bai}Docker卷管理"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}7.   ${gl_bai}清理无用的docker容器和镜像网络数据卷"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}8.   ${gl_bai}更换Docker源"
-	  echo -e "${gl_kjlan}9.   ${gl_bai}编辑daemon.json文件"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}开启Docker-ipv6访问"
-	  echo -e "${gl_kjlan}12.  ${gl_bai}关闭Docker-ipv6访问"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}备份/迁移/还原Docker环境"
-	  echo -e "${gl_kjlan}20.  ${gl_bai}卸载Docker环境"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}1.   ${gl_bai}安装更新Docker环境 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}2.   ${gl_bai}查看Docker全局状态 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}3.   ${gl_bai}Docker容器管理 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}4.   ${gl_bai}Docker镜像管理"
+	  echo -e "${gl_cyan}5.   ${gl_bai}Docker网络管理"
+	  echo -e "${gl_cyan}6.   ${gl_bai}Docker卷管理"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}7.   ${gl_bai}清理无用的docker容器和镜像网络数据卷"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}8.   ${gl_bai}更换Docker源"
+	  echo -e "${gl_cyan}9.   ${gl_bai}编辑daemon.json文件"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}11.  ${gl_bai}开启Docker-ipv6访问"
+	  echo -e "${gl_cyan}12.  ${gl_bai}关闭Docker-ipv6访问"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}19.  ${gl_bai}备份/迁移/还原Docker环境"
+	  echo -e "${gl_cyan}20.  ${gl_bai}卸载Docker环境"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}0.   ${gl_bai}返回主菜单"
+	  echo -e "${gl_cyan}------------------------${gl_bai}"
 	  read -e -p "请输入你的选择: " sub_choice
 
 	  case $sub_choice in
@@ -4083,7 +4073,7 @@ linux_docker() {
 			  ;;
 
 		  0)
-			  kejilion
+			  nimbus_home
 			  ;;
 		  *)
 			  echo "无效的输入!"
@@ -4104,38 +4094,38 @@ linux_test() {
 	while true; do
 	  clear
 	  echo -e "测试脚本合集"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}IP及解锁状态检测"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}ChatGPT 解锁状态检测"
-	  echo -e "${gl_kjlan}2.   ${gl_bai}Region 流媒体解锁测试"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}yeahwu 流媒体解锁检测"
-	  echo -e "${gl_kjlan}4.   ${gl_bai}xykt IP质量体检脚本 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}IP及解锁状态检测"
+	  echo -e "${gl_cyan}1.   ${gl_bai}ChatGPT 解锁状态检测"
+	  echo -e "${gl_cyan}2.   ${gl_bai}Region 流媒体解锁测试"
+	  echo -e "${gl_cyan}3.   ${gl_bai}yeahwu 流媒体解锁检测"
+	  echo -e "${gl_cyan}4.   ${gl_bai}xykt IP质量体检脚本 ${gl_huang}★${gl_bai}"
 
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}网络线路测速"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}besttrace 三网回程延迟路由测试"
-	  echo -e "${gl_kjlan}12.  ${gl_bai}mtr_trace 三网回程线路测试"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}Superspeed 三网测速"
-	  echo -e "${gl_kjlan}14.  ${gl_bai}nxtrace 快速回程测试脚本"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}nxtrace 指定IP回程测试脚本"
-	  echo -e "${gl_kjlan}16.  ${gl_bai}ludashi2020 三网线路测试"
-	  echo -e "${gl_kjlan}17.  ${gl_bai}i-abc 多功能测速脚本"
-	  echo -e "${gl_kjlan}18.  ${gl_bai}NetQuality 网络质量体检脚本 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}TcpQuality TCP重传探测脚本 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}网络线路测速"
+	  echo -e "${gl_cyan}11.  ${gl_bai}besttrace 三网回程延迟路由测试"
+	  echo -e "${gl_cyan}12.  ${gl_bai}mtr_trace 三网回程线路测试"
+	  echo -e "${gl_cyan}13.  ${gl_bai}Superspeed 三网测速"
+	  echo -e "${gl_cyan}14.  ${gl_bai}nxtrace 快速回程测试脚本"
+	  echo -e "${gl_cyan}15.  ${gl_bai}nxtrace 指定IP回程测试脚本"
+	  echo -e "${gl_cyan}16.  ${gl_bai}ludashi2020 三网线路测试"
+	  echo -e "${gl_cyan}17.  ${gl_bai}i-abc 多功能测速脚本"
+	  echo -e "${gl_cyan}18.  ${gl_bai}NetQuality 网络质量体检脚本 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}19.  ${gl_bai}TcpQuality TCP重传探测脚本 ${gl_huang}★${gl_bai}"
 
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}硬件性能测试"
-	  echo -e "${gl_kjlan}21.  ${gl_bai}yabs 性能测试"
-	  echo -e "${gl_kjlan}22.  ${gl_bai}icu/gb5 CPU性能测试脚本"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}硬件性能测试"
+	  echo -e "${gl_cyan}21.  ${gl_bai}yabs 性能测试"
+	  echo -e "${gl_cyan}22.  ${gl_bai}icu/gb5 CPU性能测试脚本"
 
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}综合性测试"
-	  echo -e "${gl_kjlan}31.  ${gl_bai}bench 性能测试"
-	  echo -e "${gl_kjlan}32.  ${gl_bai}spiritysdx 融合怪测评 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}33.  ${gl_bai}nodequality 融合怪测评 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}综合性测试"
+	  echo -e "${gl_cyan}31.  ${gl_bai}bench 性能测试"
+	  echo -e "${gl_cyan}32.  ${gl_bai}spiritysdx 融合怪测评 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}33.  ${gl_bai}nodequality 融合怪测评 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}0.   ${gl_bai}返回主菜单"
+	  echo -e "${gl_cyan}------------------------${gl_bai}"
 	  read -e -p "请输入你的选择: " sub_choice
 
 	  case $sub_choice in
@@ -4250,7 +4240,7 @@ linux_test() {
 
 
 		  0)
-			  kejilion
+			  nimbus_home
 
 			  ;;
 		  *)
@@ -4274,7 +4264,7 @@ docker_tato() {
 	local volume_count=$(docker volume ls -q 2>/dev/null | wc -l)
 
 	if command -v docker &> /dev/null; then
-		echo -e "${gl_kjlan}------------------------"
+		echo -e "${gl_cyan}------------------------"
 		echo -e "${gl_lv}环境已经安装${gl_bai}  容器: ${gl_lv}$container_count${gl_bai}  镜像: ${gl_lv}$image_count${gl_bai}  网络: ${gl_lv}$network_count${gl_bai}  卷: ${gl_lv}$volume_count${gl_bai}"
 	fi
 }
@@ -4282,8 +4272,6 @@ docker_tato() {
 
 
 # 应用市场配置位于本仓库 apps/ 目录；浅克隆整个仓库后读取其中的 apps/
-apps_repo_dir="$HOME/.kejilion-sh-repo"
-apps_catalog_dir="$apps_repo_dir/apps"
 
 
 
@@ -4752,32 +4740,32 @@ linux_Settings() {
 	while true; do
 	  clear
 	  echo -e "系统工具"
-	  echo -e "${gl_kjlan}------------- 账号与登录 -------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}修改登录密码                       ${gl_kjlan}2.   ${gl_bai}用户密码登录模式"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}用户密钥登录模式                   ${gl_kjlan}4.   ${gl_bai}禁用ROOT账户创建新账户"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}用户管理                           ${gl_kjlan}6.   ${gl_bai}用户/密码生成器"
-	  echo -e "${gl_kjlan}------------- 网络 -------------"
-	  echo -e "${gl_kjlan}7.   ${gl_bai}开放所有端口                       ${gl_kjlan}8.   ${gl_bai}修改SSH连接端口"
-	  echo -e "${gl_kjlan}9.   ${gl_bai}优化DNS地址                        ${gl_kjlan}10.  ${gl_bai}切换优先ipv4/ipv6"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}查看端口占用状态                   ${gl_kjlan}12.  ${gl_bai}防火墙高级管理器"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}本机host解析                       ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
-	  echo -e "${gl_kjlan}------------- 系统 -------------"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}一键重装系统 ${gl_huang}★${gl_bai}                     ${gl_kjlan}16.  ${gl_bai}修改虚拟内存大小"
-	  echo -e "${gl_kjlan}17.  ${gl_bai}系统时区调整                       ${gl_kjlan}18.  ${gl_bai}设置BBR3加速"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}修改主机名                         ${gl_kjlan}20.  ${gl_bai}切换系统更新源"
-	  echo -e "${gl_kjlan}21.  ${gl_bai}定时任务管理                       ${gl_kjlan}22.  ${gl_bai}切换系统语言"
-	  echo -e "${gl_kjlan}23.  ${gl_bai}系统变量管理工具"
-	  echo -e "${gl_kjlan}------------- 安全与运维 -------------"
-	  echo -e "${gl_kjlan}24.  ${gl_bai}SSH防御程序                        ${gl_kjlan}25.  ${gl_bai}限流自动关机"
-	  echo -e "${gl_kjlan}26.  ${gl_bai}TG-bot系统监控预警                 ${gl_kjlan}27.  ${gl_bai}命令行美化工具 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}28.  ${gl_bai}系统备份与恢复                     ${gl_kjlan}29.  ${gl_bai}硬盘分区管理工具"
-	  echo -e "${gl_kjlan}30.  ${gl_bai}命令行历史记录                     ${gl_kjlan}31.  ${gl_bai}系统日志管理工具 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}99.  ${gl_bai}重启服务器                         ${gl_kjlan}101. ${gl_bai}命令行用法 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}102. ${gl_bai}卸载脚本"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
+	  echo -e "${gl_cyan}------------- 账号与登录 -------------"
+	  echo -e "${gl_cyan}1.   ${gl_bai}修改登录密码                       ${gl_cyan}2.   ${gl_bai}用户密码登录模式"
+	  echo -e "${gl_cyan}3.   ${gl_bai}用户密钥登录模式                   ${gl_cyan}4.   ${gl_bai}禁用ROOT账户创建新账户"
+	  echo -e "${gl_cyan}5.   ${gl_bai}用户管理                           ${gl_cyan}6.   ${gl_bai}用户/密码生成器"
+	  echo -e "${gl_cyan}------------- 网络 -------------"
+	  echo -e "${gl_cyan}7.   ${gl_bai}开放所有端口                       ${gl_cyan}8.   ${gl_bai}修改SSH连接端口"
+	  echo -e "${gl_cyan}9.   ${gl_bai}优化DNS地址                        ${gl_cyan}10.  ${gl_bai}切换优先ipv4/ipv6"
+	  echo -e "${gl_cyan}11.  ${gl_bai}查看端口占用状态                   ${gl_cyan}12.  ${gl_bai}防火墙高级管理器"
+	  echo -e "${gl_cyan}13.  ${gl_bai}本机host解析                       ${gl_cyan}14.  ${gl_bai}网卡管理工具"
+	  echo -e "${gl_cyan}------------- 系统 -------------"
+	  echo -e "${gl_cyan}15.  ${gl_bai}一键重装系统 ${gl_huang}★${gl_bai}                     ${gl_cyan}16.  ${gl_bai}修改虚拟内存大小"
+	  echo -e "${gl_cyan}17.  ${gl_bai}系统时区调整                       ${gl_cyan}18.  ${gl_bai}设置BBR3加速"
+	  echo -e "${gl_cyan}19.  ${gl_bai}修改主机名                         ${gl_cyan}20.  ${gl_bai}切换系统更新源"
+	  echo -e "${gl_cyan}21.  ${gl_bai}定时任务管理                       ${gl_cyan}22.  ${gl_bai}切换系统语言"
+	  echo -e "${gl_cyan}23.  ${gl_bai}系统变量管理工具"
+	  echo -e "${gl_cyan}------------- 安全与运维 -------------"
+	  echo -e "${gl_cyan}24.  ${gl_bai}SSH防御程序                        ${gl_cyan}25.  ${gl_bai}限流自动关机"
+	  echo -e "${gl_cyan}26.  ${gl_bai}TG-bot系统监控预警                 ${gl_cyan}27.  ${gl_bai}命令行美化工具 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}28.  ${gl_bai}系统备份与恢复                     ${gl_cyan}29.  ${gl_bai}硬盘分区管理工具"
+	  echo -e "${gl_cyan}30.  ${gl_bai}命令行历史记录                     ${gl_cyan}31.  ${gl_bai}系统日志管理工具 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}99.  ${gl_bai}重启服务器                         ${gl_cyan}101. ${gl_bai}命令行用法 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_cyan}102. ${gl_bai}卸载 Nimbus"
+	  echo -e "${gl_cyan}------------------------"
+	  echo -e "${gl_cyan}0.   ${gl_bai}返回主菜单"
+	  echo -e "${gl_cyan}------------------------${gl_bai}"
 	  read -e -p "请输入你的选择: " sub_choice
 
 	  case $sub_choice in
@@ -5345,8 +5333,8 @@ EOF
 				echo "------------------------------------------------"
 				echo "当前流量使用情况，重启服务器流量计算会清零！"
 				output_status
-				echo -e "${gl_kjlan}总接收: ${gl_bai}$rx"
-				echo -e "${gl_kjlan}总发送: ${gl_bai}$tx"
+				echo -e "${gl_cyan}总接收: ${gl_bai}$rx"
+				echo -e "${gl_cyan}总发送: ${gl_bai}$tx"
 
 				# 检查是否存在 Limiting_Shut_down.sh 文件
 				if [ -f ~/Limiting_Shut_down.sh ]; then
@@ -5381,7 +5369,7 @@ EOF
 					cz_day=${cz_day:-1}
 
 					cd ~
-					if ! curl -fsS -o ~/Limiting_Shut_down.sh ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/Limiting_Shut_down1.sh; then
+					if ! curl -fsS -o ~/Limiting_Shut_down.sh ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/Limiting_Shut_down1.sh; then
 						echo "限流关机脚本下载失败"
 						continue
 					fi
@@ -5433,7 +5421,7 @@ EOF
 					  chmod +x ~/TG-check-notify.sh
 					  nano ~/TG-check-notify.sh
 				  else
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/TG-check-notify.sh
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/TG-check-notify.sh
 					  chmod +x ~/TG-check-notify.sh
 					  nano ~/TG-check-notify.sh
 				  fi
@@ -5442,7 +5430,7 @@ EOF
 				  crontab -l | grep -v '~/TG-check-notify.sh' | crontab - > /dev/null 2>&1
 				  (crontab -l ; echo "@reboot tmux new -d -s TG-check-notify '~/TG-check-notify.sh'") | crontab - > /dev/null 2>&1
 
-				  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/TG-SSH-check-notify.sh > /dev/null 2>&1
+				  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/TG-SSH-check-notify.sh > /dev/null 2>&1
 				  sed -i "3i$(grep '^TELEGRAM_BOT_TOKEN=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh > /dev/null 2>&1
 				  sed -i "4i$(grep '^CHAT_ID=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh
 				  chmod +x ~/TG-SSH-check-notify.sh
@@ -5522,17 +5510,17 @@ EOF
 
 		  102)
 			  clear
-			  echo "卸载科技lion脚本"
+			  echo "卸载 Nimbus"
 			  echo "------------------------------------------------"
-			  echo "将彻底卸载kejilion脚本，不影响你其他功能"
+			  echo "将删除 nb 命令、脚本文件及自动更新任务，不影响已安装的软件和配置"
 			  read -e -p "确定继续吗？(Y/N): " choice
 
 			  case "$choice" in
 				[Yy])
 				  clear
-				  (crontab -l | grep -v "kejilion.sh") | crontab -
-				  rm -f /usr/local/bin/k
-				  rm ~/kejilion.sh
+				  (crontab -l | grep -v "nimbus.sh") | crontab -
+				  rm -f /usr/local/bin/nb /usr/bin/nb
+				  rm -f ~/nimbus.sh ~/nimbus.sh.bak
 				  echo "脚本已卸载，再见！"
 				  break_end
 				  clear
@@ -5548,7 +5536,7 @@ EOF
 			  ;;
 
 		  0)
-			  kejilion
+			  nimbus_home
 
 			  ;;
 		  *)
@@ -5565,19 +5553,19 @@ EOF
 
 
 
-kejilion_update() {
+nimbus_update() {
 
 cd ~
 while true; do
 	clear
 	echo "更新日志"
 	echo "------------------------"
-	echo "全部日志: ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion_sh_log.txt"
+	echo "全部日志: ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md"
 	echo "------------------------"
 
-	curl -s --max-time 15 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion_sh_log.txt | tail -n 30
-	# 只下载前5行获取版本号，避免下载整个脚本
-	local sh_v_new=$(curl -s --max-time 15 -r 0-200 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
+	curl -s --max-time 15 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md | tail -n 30
+	# 只下载开头 1KB 获取版本号，避免下载整个脚本
+	local sh_v_new=$(curl -s --max-time 15 -r 0-1023 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
 
 	if [ -z "$sh_v_new" ]; then
 		echo -e "${gl_hong}无法获取最新版本信息，请检查网络连接${gl_bai}"
@@ -5589,7 +5577,7 @@ while true; do
 	fi
 
 
-	local cron_job="kejilion.sh"
+	local cron_job="nimbus.sh"
 	local existing_cron=$(crontab -l 2>/dev/null | grep -F "$cron_job")
 
 	if [ -n "$existing_cron" ]; then
@@ -5608,33 +5596,33 @@ while true; do
 			clear
 			local country=$(curl -s --max-time 5 ipinfo.io/country)
 			local download_url
-			download_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh"
+			download_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh"
 
 			# 备份当前脚本
-			cp -f ~/kejilion.sh ~/kejilion.sh.bak 2>/dev/null
+			cp -f ~/nimbus.sh ~/nimbus.sh.bak 2>/dev/null
 
 			# 下载到临时文件，校验后再替换
-			local tmp_file=$(mktemp ~/kejilion_tmp.XXXXXX)
+			local tmp_file=$(mktemp ~/nimbus_tmp.XXXXXX)
 			if curl -sS --max-time 60 --fail -o "$tmp_file" "$download_url" && \
 			   [ -s "$tmp_file" ] && \
 			   head -1 "$tmp_file" | grep -q '^#!/bin/bash'; then
 				chmod +x "$tmp_file"
-				mv -f "$tmp_file" ~/kejilion.sh
-				[ "$country" = "CN" ] && sed -i 's/^canshu="default"/canshu="CN"/' ~/kejilion.sh
+				mv -f "$tmp_file" ~/nimbus.sh
+				[ "$country" = "CN" ] && sed -i 's/^canshu="default"/canshu="CN"/' ~/nimbus.sh
 				canshu_v6
-				cp -f ~/kejilion.sh /usr/local/bin/k > /dev/null 2>&1
-				ln -sf /usr/local/bin/k /usr/bin/k > /dev/null 2>&1
+				cp -f ~/nimbus.sh /usr/local/bin/nb > /dev/null 2>&1
+				ln -sf /usr/local/bin/nb /usr/bin/nb > /dev/null 2>&1
 				echo -e "${gl_lv}脚本已更新到最新版本！${gl_huang}v$sh_v_new${gl_bai}"
 			else
 				rm -f "$tmp_file"
 				# 恢复备份
-				if [ -f ~/kejilion.sh.bak ]; then
-					mv -f ~/kejilion.sh.bak ~/kejilion.sh
+				if [ -f ~/nimbus.sh.bak ]; then
+					mv -f ~/nimbus.sh.bak ~/nimbus.sh
 				fi
 				echo -e "${gl_hong}更新失败！下载出错或文件校验不通过，已恢复原版本${gl_bai}"
 			fi
 			break_end
-			~/kejilion.sh
+			~/nimbus.sh
 			exit
 			;;
 		2)
@@ -5644,40 +5632,40 @@ while true; do
 			local cron_proxy cron_sed_cmd
 			if [ "$country" = "CN" ]; then
 				cron_proxy="$gh_proxy_mirror"
-				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"CN\"/g' ~/kejilion.sh"
+				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"CN\"/g' ~/nimbus.sh"
 			elif [ -n "$ipv6_address" ]; then
 				cron_proxy="$gh_proxy_mirror"
-				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"V6\"/g' ~/kejilion.sh"
+				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"V6\"/g' ~/nimbus.sh"
 			else
 				cron_proxy="https://"
 				cron_sed_cmd=""
 			fi
 
 			# 构建健壮的自动更新命令：下载到临时文件 → 校验 → 备份 → 替换 → 恢复本地设置 → 部署
-			SH_Update_task="cd ~ && tmp=\$(mktemp ~/kejilion_tmp.XXXXXX) && curl -sS --max-time 60 --fail -o \"\$tmp\" ${cron_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh && [ -s \"\$tmp\" ] && head -1 \"\$tmp\" | grep -q '^#!/bin/bash' && cp -f ~/kejilion.sh ~/kejilion.sh.bak 2>/dev/null && chmod +x \"\$tmp\" && mv -f \"\$tmp\" ~/kejilion.sh"
+			SH_Update_task="cd ~ && tmp=\$(mktemp ~/nimbus_tmp.XXXXXX) && curl -sS --max-time 60 --fail -o \"\$tmp\" ${cron_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh && [ -s \"\$tmp\" ] && head -1 \"\$tmp\" | grep -q '^#!/bin/bash' && cp -f ~/nimbus.sh ~/nimbus.sh.bak 2>/dev/null && chmod +x \"\$tmp\" && mv -f \"\$tmp\" ~/nimbus.sh"
 			# 追加设置恢复
 			if [ -n "$cron_sed_cmd" ]; then
 				SH_Update_task="$SH_Update_task && $cron_sed_cmd"
 			fi
-			# 部署到 /usr/local/bin/k 和 /usr/bin/k
-			SH_Update_task="$SH_Update_task; cp -f ~/kejilion.sh /usr/local/bin/k 2>/dev/null; ln -sf /usr/local/bin/k /usr/bin/k 2>/dev/null"
+			# 部署到 /usr/local/bin/nb 和 /usr/bin/nb
+			SH_Update_task="$SH_Update_task; cp -f ~/nimbus.sh /usr/local/bin/nb 2>/dev/null; ln -sf /usr/local/bin/nb /usr/bin/nb 2>/dev/null"
 			# 下载失败时清理临时文件
 			SH_Update_task="$SH_Update_task || rm -f \"\$tmp\" 2>/dev/null"
 
 			check_crontab_installed
-			(crontab -l | grep -v "kejilion.sh") | crontab -
+			(crontab -l | grep -v "nimbus.sh") | crontab -
 			(crontab -l 2>/dev/null; echo "$(shuf -i 0-59 -n 1) 2 * * * bash -c '$SH_Update_task'") | crontab -
 			echo -e "${gl_lv}自动更新已开启，每天凌晨2点脚本会自动更新！${gl_bai}"
 			break_end
 			;;
 		3)
 			clear
-			(crontab -l | grep -v "kejilion.sh") | crontab -
+			(crontab -l | grep -v "nimbus.sh") | crontab -
 			echo -e "${gl_lv}自动更新已关闭${gl_bai}"
 			break_end
 			;;
 		*)
-			kejilion_sh
+			nimbus_main
 			;;
 	esac
 done
@@ -5686,29 +5674,29 @@ done
 
 
 
-kejilion_sh() {
+nimbus_main() {
 while true; do
 clear
-echo -e "${gl_kjlan}"
-echo "╦╔═╔═╗ ╦╦╦  ╦╔═╗╔╗╔ ╔═╗╦ ╦"
-echo "╠╩╗║╣  ║║║  ║║ ║║║║ ╚═╗╠═╣"
-echo "╩ ╩╚═╝╚╝╩╩═╝╩╚═╝╝╚╝o╚═╝╩ ╩"
-echo -e "科技lion脚本工具箱 v$sh_v"
-echo -e "命令行输入${gl_huang}k${gl_kjlan}可快速启动脚本${gl_bai}"
-echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}1.   ${gl_bai}系统信息查询"
-echo -e "${gl_kjlan}2.   ${gl_bai}系统更新"
-echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
-echo -e "${gl_kjlan}4.   ${gl_bai}基础工具"
-echo -e "${gl_kjlan}5.   ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}6.   ${gl_bai}Docker管理"
-echo -e "${gl_kjlan}7.   ${gl_bai}测试脚本合集"
-echo -e "${gl_kjlan}8.   ${gl_bai}系统工具"
-echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
-echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}0.   ${gl_bai}退出脚本"
-echo -e "${gl_kjlan}------------------------${gl_bai}"
+echo -e "${gl_cyan}"
+echo "╔╗╔╦╔╦╗╔╗ ╦ ╦╔═╗"
+echo "║║║║║║║╠╩╗║ ║╚═╗"
+echo "╝╚╝╩╩ ╩╚═╝╚═╝╚═╝"
+echo -e "Nimbus · 云服务器工具箱 v$sh_v"
+echo -e "命令行输入${gl_huang}nb${gl_cyan}可快速启动${gl_bai}"
+echo -e "${gl_cyan}------------------------${gl_bai}"
+echo -e "${gl_cyan}1.   ${gl_bai}系统信息查询"
+echo -e "${gl_cyan}2.   ${gl_bai}系统更新"
+echo -e "${gl_cyan}3.   ${gl_bai}系统清理"
+echo -e "${gl_cyan}4.   ${gl_bai}基础工具"
+echo -e "${gl_cyan}5.   ${gl_bai}BBRv3加速"
+echo -e "${gl_cyan}6.   ${gl_bai}Docker管理"
+echo -e "${gl_cyan}7.   ${gl_bai}测试脚本合集"
+echo -e "${gl_cyan}8.   ${gl_bai}系统工具"
+echo -e "${gl_cyan}------------------------${gl_bai}"
+echo -e "${gl_cyan}00.  ${gl_bai}脚本更新"
+echo -e "${gl_cyan}------------------------${gl_bai}"
+echo -e "${gl_cyan}0.   ${gl_bai}退出脚本"
+echo -e "${gl_cyan}------------------------${gl_bai}"
 read -e -p "请输入你的选择: " choice
 
 case $choice in
@@ -5720,7 +5708,7 @@ case $choice in
   6) linux_docker ;;
   7) linux_test ;;
   8) linux_Settings ;;
-  00) kejilion_update ;;
+  00) nimbus_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
 esac
@@ -5731,37 +5719,37 @@ done
 
 k_info() {
 echo "-------------------"
-echo "以下是k命令参考用例："
-echo "启动脚本            k"
-echo "安装软件包          k install nano wget | k add nano wget | k 安装 nano wget"
-echo "卸载软件包          k remove nano wget | k del nano wget | k uninstall nano wget | k 卸载 nano wget"
-echo "更新系统            k update | k 更新"
-echo "清理系统垃圾        k clean | k 清理"
-echo "重装系统面板        k dd | k 重装"
-echo "bbr3控制面板        k bbr3 | k bbrv3"
-echo "设置虚拟内存        k swap 2048"
-echo "设置虚拟时区        k time Asia/Shanghai | k 时区 Asia/Shanghai"
-echo "系统备份功能        k backup | k bf | k 备份"
-echo "硬盘管理工具        k disk | k 硬盘管理"
-echo "软件启动            k start sshd | k 启动 sshd "
-echo "软件停止            k stop sshd | k 停止 sshd "
-echo "软件重启            k restart sshd | k 重启 sshd "
-echo "软件状态查看        k status sshd | k 状态 sshd "
-echo "软件开机启动        k enable docker | k autostart docke | k 开机启动 docker "
-echo "docker管理平面      k docker"
-echo "docker环境安装      k docker install |k docker 安装"
-echo "docker容器管理      k docker ps |k docker 容器"
-echo "docker镜像管理      k docker img |k docker 镜像"
-echo "防火墙面板          k fhq |k 防火墙"
-echo "开放端口            k dkdk 8080 |k 打开端口 8080"
-echo "关闭端口            k gbdk 7800 |k 关闭端口 7800"
-echo "放行IP              k fxip 127.0.0.0/8 |k 放行IP 127.0.0.0/8"
-echo "阻止IP              k zzip 177.5.25.36 |k 阻止IP 177.5.25.36"
-echo "fail2ban管理        k fail2ban | k f2b"
-echo "显示系统信息        k info"
-echo "ROOT密钥管理        k sshkey"
-echo "SSH公钥导入(URL)    k sshkey <url>"
-echo "SSH公钥导入(GitHub) k sshkey github <user> "
+echo "以下是 nb 命令参考用例："
+echo "启动脚本            nb"
+echo "安装软件包          nb install nano wget | nb add nano wget | nb 安装 nano wget"
+echo "卸载软件包          nb remove nano wget | nb del nano wget | nb uninstall nano wget | nb 卸载 nano wget"
+echo "更新系统            nb update | nb 更新"
+echo "清理系统垃圾        nb clean | nb 清理"
+echo "重装系统面板        nb dd | nb 重装"
+echo "bbr3控制面板        nb bbr3 | nb bbrv3"
+echo "设置虚拟内存        nb swap 2048"
+echo "设置虚拟时区        nb time Asia/Shanghai | nb 时区 Asia/Shanghai"
+echo "系统备份功能        nb backup | nb bf | nb 备份"
+echo "硬盘管理工具        nb disk | nb 硬盘管理"
+echo "软件启动            nb start sshd | nb 启动 sshd "
+echo "软件停止            nb stop sshd | nb 停止 sshd "
+echo "软件重启            nb restart sshd | nb 重启 sshd "
+echo "软件状态查看        nb status sshd | nb 状态 sshd "
+echo "软件开机启动        nb enable docker | nb autostart docker | nb 开机启动 docker "
+echo "docker管理平面      nb docker"
+echo "docker环境安装      nb docker install |nb docker 安装"
+echo "docker容器管理      nb docker ps |nb docker 容器"
+echo "docker镜像管理      nb docker img |nb docker 镜像"
+echo "防火墙面板          nb fhq |nb 防火墙"
+echo "开放端口            nb dkdk 8080 |nb 打开端口 8080"
+echo "关闭端口            nb gbdk 7800 |nb 关闭端口 7800"
+echo "放行IP              nb fxip 127.0.0.0/8 |nb 放行IP 127.0.0.0/8"
+echo "阻止IP              nb zzip 177.5.25.36 |nb 阻止IP 177.5.25.36"
+echo "fail2ban管理        nb fail2ban | nb f2b"
+echo "显示系统信息        nb info"
+echo "ROOT密钥管理        nb sshkey"
+echo "SSH公钥导入(URL)    nb sshkey <url>"
+echo "SSH公钥导入(GitHub) nb sshkey github <user> "
 
 }
 
@@ -5769,7 +5757,7 @@ echo "SSH公钥导入(GitHub) k sshkey github <user> "
 
 if [ "$#" -eq 0 ]; then
 	# 如果没有参数，运行交互式逻辑
-	kejilion_sh
+	nimbus_main
 else
 	# 如果有参数，执行相应函数
 	case $1 in
