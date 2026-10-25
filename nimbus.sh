@@ -1202,17 +1202,6 @@ echo "已切换为 IPv4 优先"
 
 
 
-# check_docker_app() {
-
-# if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "$docker_name"; then
-# 	check_docker="${gl_lv}已安装${gl_bai}"
-# else
-# 	check_docker="${gl_hui}未安装${gl_bai}"
-# fi
-
-# }
-
-
 check_docker_app_ip() {
 echo "------------------------"
 echo "访问地址:"
@@ -1506,9 +1495,6 @@ output_status() {
 	tx=$(echo "$output" | awk '{print $2}')
 
 }
-
-
-
 
 
 
@@ -2610,18 +2596,6 @@ bbrv3() {
 		fi
 
 }
-
-
-
-# ============================================================================
-# Linux 内核调优模块（重构版）
-# 统一核心函数 + 场景差异化参数 + 持久化到配置文件 + 硬件自适应
-# 替换原 optimize_high_performance / optimize_balanced / optimize_web_server / restore_defaults
-# ============================================================================
-
-
-
-# ── 各模式入口函数（保持原有调用接口不变） ──
 
 
 
@@ -5505,7 +5479,7 @@ EOF
 			  ;;
 		  101)
 			  clear
-			  k_info
+			  nb_help
 			  ;;
 
 		  102)
@@ -5717,7 +5691,7 @@ done
 }
 
 
-k_info() {
+nb_help() {
 echo "-------------------"
 echo "以下是 nb 命令参考用例："
 echo "启动脚本            nb"
@@ -5910,7 +5884,7 @@ else
 
 			;;
 		*)
-			k_info
+			nb_help
 			;;
 	esac
 fi
