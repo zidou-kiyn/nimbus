@@ -17,16 +17,6 @@
 </p>
 
 <p align="center">
-  <a href="README.md"><img src="https://img.shields.io/badge/简体中文-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="简体中文"></a>
-  <a href="README.tw.md"><img src="https://img.shields.io/badge/繁體中文-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="繁體中文"></a>
-  <a href="README.md"><img src="https://img.shields.io/badge/English-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="English"></a>
-  <a href="README.kr.md"><img src="https://img.shields.io/badge/한국어-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="한국어"></a>
-  <a href="README.ja.md"><img src="https://img.shields.io/badge/日本語-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="日本語"></a>
-  <a href="README.ru.md"><img src="https://img.shields.io/badge/Русский-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Русский"></a>
-  <a href="README.fa.md"><img src="https://img.shields.io/badge/فارسی-2F4F4F?style=for-the-badge&logo=google-chrome&logoColor=white" alt="فارسی"></a>
-</p>
-
-<p align="center">
   <a href="#介绍">介绍</a> ·
   <a href="#一键安装">一键安装</a> ·
   <a href="#支持系统">支持系统</a> ·
