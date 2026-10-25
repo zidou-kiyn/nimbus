@@ -58,7 +58,11 @@ ai_cli_require_installed() {
 
 ai_cli_mark() {
 	local app_id="$AI_CLI_ID"
-	kpanel_app_with_lock markers kpanel_app_update_marker "$1"
+	case "$1" in
+		add) add_app_id ;;
+		remove) remove_app_id ;;
+		*) return 1 ;;
+	esac
 }
 
 # Check the system resolver as well as the static mapping used by native tools.
@@ -118,7 +122,7 @@ ai_cli_fix_localhost() {
 
 ai_cli_prepare_environment() {
 	[ "$AI_CLI_COMMAND" = agy ] || return 0
-	kpanel_app_with_lock system ai_cli_fix_localhost
+	ai_cli_fix_localhost
 }
 
 # Download completely before execution; a failed/partial response is never run.
@@ -264,7 +268,7 @@ ai_cli_uninstall_impl() {
 ai_cli_uninstall() {
 	local confirm
 	read -r -p "卸载 $AI_CLI_NAME 命令？配置和会话将保留。(y/N): " confirm || return 1
-	case "$confirm" in y|Y) kpanel_app_with_lock system ai_cli_uninstall_impl ;; *) echo '已取消。' ;; esac
+	case "$confirm" in y|Y) ai_cli_uninstall_impl ;; *) echo '已取消。' ;; esac
 }
 
 ai_cli_project() (
@@ -402,7 +406,7 @@ ai_cli_show_menu() {
 ai_cli_main() {
 	ai_cli_select "$1" || return 1
 	[ "$(id -u)" = 0 ] || { echo '请以 root 运行 k app，管理服务器上的安装。' >&2; return 1; }
-	declare -F kpanel_app_with_lock >/dev/null && declare -F kpanel_app_update_marker >/dev/null || {
+	declare -F add_app_id >/dev/null && declare -F remove_app_id >/dev/null || {
 		echo '请通过最新版 kejilion.sh 的 k app 入口运行。' >&2; return 1;
 	}
 	local choice result=0
@@ -414,12 +418,12 @@ ai_cli_main() {
 		ai_cli_show_menu
 		read -r -p "$(printf '%b请选择:%b ' "$AI_CLI_CYAN" "$AI_CLI_RESET")" choice || return "$result"
 		case "$choice" in
-			1) kpanel_app_with_lock system ai_cli_install_impl ;;
+			1) ai_cli_install_impl ;;
 			2) ai_cli_project ;;
 			3) ai_cli_login ;;
 			4) ai_cli_require_installed && "$AI_CLI_COMMAND" --version && ai_cli_auth status ;;
 			5) ai_cli_project resume ;;
-			6) kpanel_app_with_lock system ai_cli_update_impl ;;
+			6) ai_cli_update_impl ;;
 			7) ai_cli_require_installed && "$AI_CLI_COMMAND" --help ;;
 			8) ai_cli_uninstall ;;
 			9) ai_cli_auth logout ;;

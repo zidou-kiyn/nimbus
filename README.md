@@ -22,7 +22,6 @@
   <a href="#支持系统">支持系统</a> ·
   <a href="#效果图预览">效果图预览</a> ·
   <a href="#核心功能">核心功能</a> ·
-  <a href="#kpanel-web-管理面板">KPanel</a> ·
   <a href="#开源许可">开源许可</a>
 </p>
 
@@ -103,20 +102,6 @@ bash <(curl -sL kejilion.sh) en
   *App market integration for one-click deployment and management.*
 - **自动更新机制**：检测脚本版本并提供更新入口。<br>
   *Update detection keeps the script features current.*
-
-## KPanel Web 管理面板
-
-偏好浏览器操作时，可以通过 `kejilion.sh` 应用入口一键部署 KPanel：
-
-```bash
-bash <(curl -sL kejilion.sh) app kpanel
-```
-
-KPanel 是 `kejilion.sh` 的现代 Web 管理形态。脚本、SSH、Docker Compose 和 KPanel
-创建的真实资源可以互相发现并继续管理。
-
-- [KPanel GitHub 项目](https://github.com/kejilion/KPanel)
-- [KPanel 一键部署与功能介绍](https://blog.kejilion.pro/kpanel-kejilion-web-server-panel/)
 
 ## 项目文档
 
