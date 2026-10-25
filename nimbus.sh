@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.0.0"
+sh_v="1.0.1"
 
 
 gl_hui='\e[37m'
@@ -4709,6 +4709,632 @@ EOF
 
 
 
+# ---------------------------------------------------------------------------
+# TG-bot 监控预警：交互配置 + systemd/sshrc 部署
+# ---------------------------------------------------------------------------
+TG_NOTIFY_CONF="/etc/nimbus/tg-notify.conf"
+TG_NOTIFY_MONITOR="/root/TG-check-notify.sh"
+TG_NOTIFY_SSH="/usr/local/bin/tg-ssh-notify.sh"
+TG_NOTIFY_UNIT="/etc/systemd/system/tg-check-notify.service"
+TG_NOTIFY_SSHRC="/etc/ssh/sshrc"
+# shellcheck disable=SC2016  # 写入 sshrc 的原文，$SSH_TTY 由 sshrc 运行时展开
+TG_NOTIFY_SSHRC_LINE='[ -n "$SSH_TTY" ] && /usr/local/bin/tg-ssh-notify.sh </dev/null >/dev/null 2>&1 &'
+TG_NOTIFY_SSHRC_MARK="# nimbus: 本文件由 nimbus TG-bot 监控预警创建"
+TG_NOTIFY_CRON_LINE="@reboot nohup /bin/bash $TG_NOTIFY_MONITOR >/dev/null 2>&1 &"
+
+
+# 注意：本文件顶部定义了同名的 systemctl() 包装函数（只接受两个参数），这里一律用 command systemctl
+tg_notify_systemd() {
+	[ -d /run/systemd/system ] && type -P systemctl >/dev/null 2>&1
+}
+
+tg_notify_mask_token() {
+	local token="$1"
+	if [ "${#token}" -le 8 ]; then
+		echo "****"
+	else
+		echo "${token:0:4}****${token: -4}"
+	fi
+}
+
+# 单引号包裹，供写入可被 source 的配置文件
+tg_notify_quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# 去掉控制字符和首尾空白
+tg_notify_clean() {
+	printf '%s' "$1" | tr -d '\000-\037\177' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+# 调用 Telegram Bot API：Token 经 stdin 交给 curl，不出现在进程参数里
+tg_notify_api() {
+	local token="$1" method="$2"
+	shift 2
+	printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$token" "$method" | curl -s -m 10 -K - "$@"
+}
+
+tg_notify_json() {
+	printf '%s' "$1" | jq -r "$2" 2>/dev/null
+}
+
+tg_notify_load_config() {
+	tg_cfg_loaded=false
+	[ -f "$TG_NOTIFY_CONF" ] || return 1
+	local TELEGRAM_BOT_TOKEN="" CHAT_ID="" isp_info="" country="" masked_ip=""
+	local CPU_THRESHOLD="" MEMORY_THRESHOLD="" DISK_THRESHOLD="" NETWORK_THRESHOLD_GB=""
+	# shellcheck source=/dev/null
+	. "$TG_NOTIFY_CONF" 2>/dev/null || return 1
+	tg_old_token="$TELEGRAM_BOT_TOKEN"
+	tg_old_chat="$CHAT_ID"
+	tg_old_isp="$isp_info"
+	tg_old_country="$country"
+	tg_old_masked="$masked_ip"
+	tg_old_cpu="$CPU_THRESHOLD"
+	tg_old_mem="$MEMORY_THRESHOLD"
+	tg_old_disk="$DISK_THRESHOLD"
+	tg_old_net="$NETWORK_THRESHOLD_GB"
+	tg_cfg_loaded=true
+}
+
+tg_notify_show_basic() {
+	echo -e "  主机名               : $(hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null)"
+	echo -e "  国家代码  country    : $2"
+	echo -e "  ISP/标识  isp_info   : $1"
+	[ -n "$4" ] && echo -e "  公网 IPv4            : $4"
+	echo -e "  打码 IP   masked_ip  : $3"
+	echo -e "  消息中的机器标识     : ${gl_huang}$1-$2-$3${gl_bai}"
+}
+
+tg_notify_probe() {
+	local json org ip
+	echo "正在探测本机信息..."
+	json=$(curl -s -m 5 https://ipinfo.io/json 2>/dev/null)
+	tg_probe_country=$(tg_notify_json "$json" '.country // empty')
+	org=$(tg_notify_json "$json" '.org // empty')
+	tg_probe_isp=$(printf '%s' "$org" | awk '{print ($2 != "" ? $2 : $1)}')
+	ip=$(curl -s -m 5 https://ipv4.ip.sb 2>/dev/null | tr -d '[:space:]')
+	if [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+		tg_probe_ipv4="$ip"
+		tg_probe_masked=$(echo "$ip" | awk -F'.' '{print "*."$3"."$4}')
+	else
+		tg_probe_ipv4="Unknown"
+		tg_probe_masked="Unknown"
+	fi
+	[ -n "$tg_probe_country" ] || tg_probe_country="Unknown"
+	[ -n "$tg_probe_isp" ] || tg_probe_isp="Unknown"
+}
+
+tg_notify_read_value() {
+	local __var="$1" prompt="$2" value
+	read -r -e -p "$prompt [${!__var}]: " value
+	value=$(tg_notify_clean "$value")
+	[ -n "$value" ] && printf -v "$__var" '%s' "$value"
+}
+
+# 第 1 步：机器基础信息
+tg_notify_step_basic() {
+	local choice confirm
+	echo -e "${gl_cyan}第 1 步：机器基础信息${gl_bai}"
+	echo "------------------------"
+	if [ "$tg_cfg_loaded" = true ] && [ -n "$tg_old_isp" ] && [ -n "$tg_old_country" ] && [ -n "$tg_old_masked" ]; then
+		echo "现有配置："
+		tg_notify_show_basic "$tg_old_isp" "$tg_old_country" "$tg_old_masked"
+		echo "------------------------"
+		echo "1. 沿用现有信息          2. 重新探测或自定义"
+		echo "0. 取消"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				tg_isp="$tg_old_isp"; tg_country="$tg_old_country"; tg_masked="$tg_old_masked"
+				return 0
+				;;
+			2) ;;
+			*) return 1 ;;
+		esac
+	fi
+
+	tg_notify_probe
+	while true; do
+		echo "------------------------"
+		echo "探测结果："
+		tg_notify_show_basic "$tg_probe_isp" "$tg_probe_country" "$tg_probe_masked" "$tg_probe_ipv4"
+		echo "------------------------"
+		echo "1. 使用以上信息继续      2. 自定义"
+		echo "0. 取消"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				tg_isp="$tg_probe_isp"; tg_country="$tg_probe_country"; tg_masked="$tg_probe_masked"
+				return 0
+				;;
+			2)
+				tg_isp="$tg_probe_isp"; tg_country="$tg_probe_country"; tg_masked="$tg_probe_masked"
+				while true; do
+					echo "逐项输入，直接回车保留方括号中的值"
+					tg_notify_read_value tg_isp "ISP/机器标识 isp_info"
+					tg_notify_read_value tg_country "国家代码 country"
+					echo -e "${gl_hui}masked_ip 可填打码 IP、完整 IP 或任意文本${gl_bai}"
+					tg_notify_read_value tg_masked "打码 IP masked_ip"
+					echo "------------------------"
+					echo "自定义结果："
+					tg_notify_show_basic "$tg_isp" "$tg_country" "$tg_masked"
+					read -r -e -p "确认使用以上信息？(Y/N，N 重新填写): " confirm
+					case "$confirm" in
+						[Yy]) return 0 ;;
+						*) echo "------------------------" ;;
+					esac
+				done
+				;;
+			0) return 1 ;;
+			*) echo "无效的选择，请重新输入" ;;
+		esac
+	done
+}
+
+tg_notify_retry() {
+	local choice
+	read -r -e -p "1. 重新输入    0. 放弃 : " choice
+	[ "$choice" = "1" ]
+}
+
+# 第 2 步：Telegram 凭据
+tg_notify_step_telegram() {
+	local choice token chat resp desc bot confirm text
+	echo -e "${gl_cyan}第 2 步：Telegram 凭据${gl_bai}"
+	echo "------------------------"
+	if [ "$tg_cfg_loaded" = true ] && [ -n "$tg_old_token" ] && [ -n "$tg_old_chat" ]; then
+		echo "现有配置：Bot Token $(tg_notify_mask_token "$tg_old_token")    Chat ID $tg_old_chat"
+		echo "1. 沿用现有凭据          2. 重新输入"
+		echo "0. 取消"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				resp=$(tg_notify_api "$tg_old_token" getMe)
+				if [ "$(tg_notify_json "$resp" '.ok')" = "true" ]; then
+					echo -e "${gl_lv}Token 校验通过${gl_bai}，机器人: @$(tg_notify_json "$resp" '.result.username')"
+					tg_token="$tg_old_token"; tg_chat="$tg_old_chat"
+					return 0
+				fi
+				echo -e "${gl_hong}现有 Token 校验失败${gl_bai}，请重新输入"
+				;;
+			2) ;;
+			*) return 1 ;;
+		esac
+	fi
+
+	while true; do
+		read -r -s -p "请输入 Bot Token（输入内容不显示）: " token
+		echo ""
+		token=$(printf '%s' "$token" | tr -d '[:space:]')
+		if ! [[ "$token" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+			echo -e "${gl_hong}Token 格式不正确${gl_bai}，应形如 123456789:AAxxxx"
+			tg_notify_retry || return 1
+			continue
+		fi
+		echo "Bot Token: $(tg_notify_mask_token "$token")，正在通过 getMe 校验..."
+		resp=$(tg_notify_api "$token" getMe)
+		if [ "$(tg_notify_json "$resp" '.ok')" != "true" ]; then
+			desc=$(tg_notify_json "$resp" '.description // empty')
+			[ -n "$resp" ] || desc="无法连接 api.telegram.org"
+			echo -e "${gl_hong}Token 校验失败${gl_bai}: ${desc:-未知错误}"
+			tg_notify_retry || return 1
+			continue
+		fi
+		bot=$(tg_notify_json "$resp" '.result.username')
+		echo -e "${gl_lv}Token 校验通过${gl_bai}，机器人: @$bot"
+
+		while true; do
+			while true; do
+				read -r -p "请输入 Chat ID: " chat
+				chat=$(printf '%s' "$chat" | tr -d '[:space:]')
+				[[ "$chat" =~ ^-?[0-9]+$ ]] && break
+				echo -e "${gl_hong}Chat ID 格式不正确${gl_bai}，只能是数字（群组可带负号）"
+			done
+
+			text="✅ Nimbus TG-bot 测试消息
+机器：${tg_isp}-${tg_country}-${tg_masked}
+收到这条消息说明 Bot Token 和 Chat ID 配置正确。"
+			resp=$(tg_notify_api "$token" sendMessage -X POST --data-urlencode "chat_id=$chat" --data-urlencode "text=$text")
+			if [ "$(tg_notify_json "$resp" '.ok')" = "true" ]; then
+				read -r -e -p "测试消息已发送，是否收到？(Y/N): " confirm
+				case "$confirm" in
+					[Yy])
+						tg_token="$token"; tg_chat="$chat"
+						return 0
+						;;
+				esac
+				echo "请检查 Chat ID 是否对应正确的账号或群组，并确认已先给机器人发送过 /start"
+			else
+				desc=$(tg_notify_json "$resp" '.description // empty')
+				echo -e "${gl_hong}测试消息发送失败${gl_bai}: ${desc:-未知错误}"
+				echo "请确认 Chat ID 正确，并且已经先给机器人发送过 /start"
+			fi
+			read -r -e -p "1. 重新输入 Chat ID    2. 重新输入 Bot Token    0. 放弃 : " choice
+			case "$choice" in
+				1) ;;
+				2) continue 2 ;;
+				*) return 1 ;;
+			esac
+		done
+	done
+}
+
+tg_notify_read_number() {
+	local __var="$1" prompt="$2" default="$3" min="$4" max="$5" value
+	while true; do
+		read -r -e -p "$prompt [默认 $default]: " value
+		value=$(printf '%s' "${value:-$default}" | tr -d '[:space:]')
+		if [[ "$value" =~ ^[0-9]{1,12}$ ]]; then
+			value=$((10#$value))
+			if [ "$value" -ge "$min" ] && { [ -z "$max" ] || [ "$value" -le "$max" ]; }; then
+				printf -v "$__var" '%s' "$value"
+				return 0
+			fi
+		fi
+		if [ -n "$max" ]; then
+			echo -e "${gl_hong}输入无效${gl_bai}，请输入 ${min}-${max} 之间的整数"
+		else
+			echo -e "${gl_hong}输入无效${gl_bai}，请输入不小于 ${min} 的整数"
+		fi
+	done
+}
+
+# 第 3 步：监控阈值
+tg_notify_step_threshold() {
+	echo -e "${gl_cyan}第 3 步：监控阈值${gl_bai}（直接回车使用默认值）"
+	echo "------------------------"
+	tg_notify_read_number tg_cpu "CPU 使用率阈值 %" "${tg_old_cpu:-70}" 1 100
+	tg_notify_read_number tg_mem "内存使用率阈值 %" "${tg_old_mem:-70}" 1 100
+	tg_notify_read_number tg_disk "硬盘使用率阈值 %" "${tg_old_disk:-70}" 1 100
+	tg_notify_read_number tg_net "入站/出站流量阈值 GB" "${tg_old_net:-1000}" 1 ""
+}
+
+tg_notify_write_config() {
+	local tmp
+	mkdir -p /etc/nimbus || return 1
+	chmod 755 /etc/nimbus
+	tmp=$(mktemp /etc/nimbus/.tg-notify.conf.XXXXXX) || return 1
+	{
+		echo "# Nimbus TG-bot 监控预警配置，由 nimbus 菜单「TG-bot系统监控预警」生成"
+		echo "# 权限必须保持 root:root 0600"
+		echo "TELEGRAM_BOT_TOKEN=$(tg_notify_quote "$tg_token")"
+		echo "CHAT_ID=$(tg_notify_quote "$tg_chat")"
+		echo ""
+		echo "# 机器标识：消息中显示为 isp_info-country-masked_ip"
+		echo "isp_info=$(tg_notify_quote "$tg_isp")"
+		echo "country=$(tg_notify_quote "$tg_country")"
+		echo "masked_ip=$(tg_notify_quote "$tg_masked")"
+		echo ""
+		echo "# 资源监控阈值"
+		echo "CPU_THRESHOLD=$tg_cpu"
+		echo "MEMORY_THRESHOLD=$tg_mem"
+		echo "DISK_THRESHOLD=$tg_disk"
+		echo "NETWORK_THRESHOLD_GB=$tg_net"
+	} > "$tmp" || { rm -f "$tmp"; return 1; }
+	chown root:root "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$TG_NOTIFY_CONF"
+}
+
+tg_notify_fetch() {
+	local name="$1" dest="$2" url tmp
+	url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/${name}"
+	mkdir -p "$(dirname "$dest")" || return 1
+	tmp=$(mktemp "${dest}.XXXXXX") || return 1
+	if curl -fsS -m 60 -o "$tmp" "$url" && head -1 "$tmp" | grep -q '^#!/bin/bash'; then
+		chown root:root "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$dest"
+	else
+		rm -f "$tmp"
+		echo -e "${gl_hong}下载失败${gl_bai}: $url"
+		return 1
+	fi
+}
+
+# 结束非 systemd 方式启动的监控进程（不依赖 pkill）
+tg_notify_kill_monitor() {
+	local proc cmd
+	for proc in /proc/[0-9]*; do
+		cmd=$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null)
+		case "$cmd" in
+			"/bin/bash $TG_NOTIFY_MONITOR"*|"bash $TG_NOTIFY_MONITOR"*) kill "${proc#/proc/}" 2>/dev/null ;;
+		esac
+	done
+}
+
+# 删除 root crontab 中所有含 TG-check-notify.sh 的 @reboot 行；删除了任何行返回 0。
+# 若删除的行中有不同于当前 nohup 回退格式的（即旧版 tmux 行），置 tg_cron_legacy=true
+tg_notify_crontab_clean() {
+	local cur lines
+	tg_cron_legacy=false
+	command -v crontab >/dev/null 2>&1 || return 1
+	cur=$(crontab -l 2>/dev/null)
+	lines=$(printf '%s\n' "$cur" | grep '^@reboot.*TG-check-notify\.sh')
+	[ -n "$lines" ] || return 1
+	printf '%s\n' "$cur" | grep -v '^@reboot.*TG-check-notify\.sh' | crontab -
+	printf '%s\n' "$lines" | grep -qvxF "$TG_NOTIFY_CRON_LINE" && tg_cron_legacy=true
+	return 0
+}
+
+# 清理 tmux + crontab + ~/.profile 方式的旧部署（幂等）
+tg_notify_migrate_legacy() {
+	local home profile bashrc had_profile_line
+	if command -v tmux >/dev/null 2>&1 && tmux has-session -t TG-check-notify 2>/dev/null; then
+		tmux kill-session -t TG-check-notify 2>/dev/null && echo "已停止旧的 tmux 会话 TG-check-notify"
+	fi
+	if tg_notify_crontab_clean && { [ "$tg_cron_legacy" = true ] || tg_notify_systemd; }; then
+		echo "已移除 crontab 中旧的 @reboot 自启行"
+	fi
+
+	for home in "$HOME" /root; do
+		[ -d "$home" ] || continue
+		profile="$home/.profile"
+		bashrc="$home/.bashrc"
+		had_profile_line=false
+		if [ -f "$profile" ] && grep -qxF 'bash ~/TG-SSH-check-notify.sh' "$profile"; then
+			had_profile_line=true
+			sed -i '\#^bash ~/TG-SSH-check-notify\.sh$#d' "$profile"
+			echo "已从 $profile 移除旧的 SSH 登录提醒"
+		fi
+		# 旧逻辑在 dnf/yum 系统上会往 ~/.bashrc 追加 source ~/.profile。
+		# 仅当 ~/.profile 原本只有那一行旧内容（移除后已无有效内容）时，才认定这行是旧逻辑加的。
+		if [ "$had_profile_line" = true ] && [ -f "$bashrc" ] && grep -qxF 'source ~/.profile' "$bashrc"; then
+			if ! grep -qvE '^[[:space:]]*(#.*)?$' "$profile"; then
+				local last
+				last=$(grep -nxF 'source ~/.profile' "$bashrc" | tail -1 | cut -d: -f1)
+				sed -i "${last}d" "$bashrc"
+				echo "已从 $bashrc 移除旧逻辑添加的 source ~/.profile"
+				# ~/.profile 是旧逻辑新建的且已无内容，一并删除
+				[ -s "$profile" ] || rm -f "$profile"
+			else
+				echo -e "${gl_hui}提示: $bashrc 中的 source ~/.profile 可能是旧版添加的，如不需要可手动删除${gl_bai}"
+			fi
+		fi
+		if [ -f "$home/TG-SSH-check-notify.sh" ]; then
+			rm -f "$home/TG-SSH-check-notify.sh" && echo "已删除旧脚本 $home/TG-SSH-check-notify.sh"
+		fi
+	done
+}
+
+tg_notify_sshrc_install() {
+	local created=false x11
+	if [ ! -e "$TG_NOTIFY_SSHRC" ]; then
+		created=true
+		mkdir -p "$(dirname "$TG_NOTIFY_SSHRC")"
+		echo "$TG_NOTIFY_SSHRC_MARK" > "$TG_NOTIFY_SSHRC"
+		chmod 644 "$TG_NOTIFY_SSHRC"
+		x11=$(sshd -T 2>/dev/null | awk 'tolower($1)=="x11forwarding" {print tolower($2)}')
+		[ -n "$x11" ] || x11=$(awk 'tolower($1)=="x11forwarding" {print tolower($2); exit}' /etc/ssh/sshd_config 2>/dev/null)
+		if [ "$x11" = "yes" ]; then
+			# /etc/ssh/sshrc 存在时 sshd 不再自动执行 xauth，按 man sshd (SSHRC) 补上标准片段
+			cat >> "$TG_NOTIFY_SSHRC" <<'XAUTH'
+# >>> nimbus xauth (man sshd: SSHRC) >>>
+if read proto cookie && [ -n "$DISPLAY" ]; then
+	if [ `echo $DISPLAY | cut -c1-10` = 'localhost:' ]; then
+		# X11UseLocalhost=yes
+		echo add unix:`echo $DISPLAY |
+		    cut -c11-` $proto $cookie
+	else
+		# X11UseLocalhost=no
+		echo add $DISPLAY $proto $cookie
+	fi | xauth -q -
+fi
+# <<< nimbus xauth <<<
+XAUTH
+			echo -e "${gl_huang}提示:${gl_bai} sshd 已开启 X11Forwarding，已在新建的 $TG_NOTIFY_SSHRC 中写入标准 xauth 片段"
+		fi
+	fi
+	if grep -qxF "$TG_NOTIFY_SSHRC_LINE" "$TG_NOTIFY_SSHRC"; then
+		:
+	elif grep -qF "$TG_NOTIFY_SSH" "$TG_NOTIFY_SSHRC"; then
+		local tmp
+		tmp=$(mktemp) || return 1
+		awk -v path="$TG_NOTIFY_SSH" -v line="$TG_NOTIFY_SSHRC_LINE" 'index($0, path) { if (!done) print line; done=1; next } { print }' "$TG_NOTIFY_SSHRC" > "$tmp" &&
+			cat "$tmp" > "$TG_NOTIFY_SSHRC"
+		rm -f "$tmp"
+	else
+		[ -s "$TG_NOTIFY_SSHRC" ] && [ -n "$(tail -c 1 "$TG_NOTIFY_SSHRC")" ] && echo "" >> "$TG_NOTIFY_SSHRC"
+		echo "$TG_NOTIFY_SSHRC_LINE" >> "$TG_NOTIFY_SSHRC"
+	fi
+	[ "$created" = true ] && echo "已新建 $TG_NOTIFY_SSHRC"
+	return 0
+}
+
+tg_notify_sshrc_remove() {
+	[ -f "$TG_NOTIFY_SSHRC" ] || return 0
+	local tmp
+	tmp=$(mktemp) || return 1
+	if grep -qF "$TG_NOTIFY_SSH" "$TG_NOTIFY_SSHRC"; then
+		grep -vF "$TG_NOTIFY_SSH" "$TG_NOTIFY_SSHRC" > "$tmp"
+		cat "$tmp" > "$TG_NOTIFY_SSHRC"
+		echo "已移除 $TG_NOTIFY_SSHRC 中的登录提醒"
+	fi
+	if head -1 "$TG_NOTIFY_SSHRC" | grep -qxF "$TG_NOTIFY_SSHRC_MARK"; then
+		# 由 nimbus 新建：去掉标记和 xauth 片段后若已无其他内容，删除文件以恢复 sshd 默认的 xauth 行为
+		sed '1d; /^# >>> nimbus xauth/,/^# <<< nimbus xauth <<<$/d' "$TG_NOTIFY_SSHRC" > "$tmp"
+		if ! grep -qvE '^[[:space:]]*$' "$tmp"; then
+			rm -f "$TG_NOTIFY_SSHRC"
+			echo "已删除由 nimbus 创建的 $TG_NOTIFY_SSHRC"
+		fi
+	fi
+	rm -f "$tmp"
+}
+
+tg_notify_write_unit() {
+	local tmp
+	tmp=$(mktemp) || return 1
+	cat > "$tmp" <<'UNIT'
+[Unit]
+Description=TG-check-notify - CPU/内存/磁盘/流量阈值 Telegram 告警
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /root/TG-check-notify.sh
+WorkingDirectory=/root
+Environment=HOME=/root LC_ALL=C
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tg-check-notify
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+	if cmp -s "$tmp" "$TG_NOTIFY_UNIT"; then
+		rm -f "$tmp"
+	else
+		chmod 644 "$tmp" && mv -f "$tmp" "$TG_NOTIFY_UNIT"
+	fi
+}
+
+tg_notify_start_monitor() {
+	if tg_notify_systemd; then
+		tg_notify_write_unit || return 1
+		command systemctl daemon-reload
+		if command systemctl is-active --quiet tg-check-notify.service; then
+			command systemctl enable tg-check-notify.service >/dev/null 2>&1
+			command systemctl restart tg-check-notify.service
+		else
+			command systemctl enable --now tg-check-notify.service
+		fi
+	else
+		echo -e "${gl_huang}提示:${gl_bai} 未检测到 systemd，改用 crontab @reboot 方式开机自启"
+		check_crontab_installed
+		tg_notify_crontab_clean
+		(crontab -l 2>/dev/null; echo "$TG_NOTIFY_CRON_LINE") | crontab -
+		tg_notify_kill_monitor
+		nohup /bin/bash "$TG_NOTIFY_MONITOR" >/dev/null 2>&1 &
+	fi
+}
+
+tg_notify_monitor_status() {
+	local proc
+	if tg_notify_systemd; then
+		command systemctl is-active tg-check-notify.service 2>/dev/null
+		return
+	fi
+	for proc in /proc/[0-9]*; do
+		case "$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null)" in
+			"/bin/bash $TG_NOTIFY_MONITOR"*) echo "running (pid ${proc#/proc/}, crontab @reboot)"; return ;;
+		esac
+	done
+	echo "inactive"
+}
+
+tg_notify_show_result() {
+	echo "------------------------"
+	echo -e "资源监控 tg-check-notify : ${gl_huang}$(tg_notify_monitor_status)${gl_bai}"
+	if grep -qxF "$TG_NOTIFY_SSHRC_LINE" "$TG_NOTIFY_SSHRC" 2>/dev/null; then
+		echo -e "SSH 登录提醒 sshrc       : ${gl_lv}已挂载${gl_bai} ($TG_NOTIFY_SSHRC 第 $(grep -nxF "$TG_NOTIFY_SSHRC_LINE" "$TG_NOTIFY_SSHRC" | cut -d: -f1) 行)"
+	else
+		echo -e "SSH 登录提醒 sshrc       : ${gl_hong}未挂载${gl_bai}"
+	fi
+	echo "配置文件                 : $TG_NOTIFY_CONF ($(stat -c '%a %U:%G' "$TG_NOTIFY_CONF" 2>/dev/null))"
+}
+
+tg_notify_install() {
+	local confirm
+	install curl bc jq
+	tg_old_token="" tg_old_chat="" tg_old_isp="" tg_old_country="" tg_old_masked=""
+	tg_old_cpu="" tg_old_mem="" tg_old_disk="" tg_old_net=""
+	tg_token="" tg_chat="" tg_isp="" tg_country="" tg_masked=""
+	tg_cpu="" tg_mem="" tg_disk="" tg_net=""
+	tg_notify_load_config
+	if [ -f "$TG_NOTIFY_CONF" ] && [ "$tg_cfg_loaded" != true ]; then
+		echo -e "${gl_huang}提示:${gl_bai} 现有配置文件无法读取，将重新配置"
+	fi
+
+	echo ""
+	tg_notify_step_basic || { echo "已取消"; return 1; }
+	echo ""
+	tg_notify_step_telegram || { echo "已取消"; return 1; }
+	echo ""
+	tg_notify_step_threshold
+
+	echo ""
+	echo -e "${gl_cyan}第 4 步：确认配置${gl_bai}"
+	echo "------------------------"
+	echo "Bot Token   : $(tg_notify_mask_token "$tg_token")"
+	echo "Chat ID     : $tg_chat"
+	echo -e "机器标识    : ${gl_huang}${tg_isp}-${tg_country}-${tg_masked}${gl_bai}"
+	echo "CPU 阈值    : ${tg_cpu}%"
+	echo "内存阈值    : ${tg_mem}%"
+	echo "硬盘阈值    : ${tg_disk}%"
+	echo "流量阈值    : ${tg_net}GB（入站、出站分别计算）"
+	echo "------------------------"
+	read -r -e -p "确认写入配置并部署？(Y/N): " confirm
+	case "$confirm" in
+		[Yy]) ;;
+		*) echo "已取消，未做任何修改"; return 1 ;;
+	esac
+
+	tg_notify_migrate_legacy
+	tg_notify_write_config || { echo -e "${gl_hong}配置写入失败${gl_bai}"; return 1; }
+	echo "已写入配置 $TG_NOTIFY_CONF"
+	tg_notify_fetch TG-check-notify.sh "$TG_NOTIFY_MONITOR" || return 1
+	tg_notify_fetch TG-SSH-check-notify.sh "$TG_NOTIFY_SSH" || return 1
+	echo "已部署 $TG_NOTIFY_MONITOR 和 $TG_NOTIFY_SSH"
+	tg_notify_sshrc_install
+	tg_notify_start_monitor
+
+	echo ""
+	echo -e "${gl_lv}TG-bot 监控预警已部署${gl_bai}"
+	tg_notify_show_result
+	echo -e "${gl_hui}-关于流量，重启服务器将重新计算-${gl_bai}"
+	echo -e "${gl_hui}SSH 登录提醒仅对 root 登录生效（配置文件仅 root 可读）${gl_bai}"
+	echo -e "${gl_hui}其他机器请直接运行本菜单重新配置；若要复制部署，需同时带上 $TG_NOTIFY_CONF 并修改机器标识${gl_bai}"
+}
+
+tg_notify_uninstall() {
+	local confirm
+	read -r -e -p "将停用并删除 TG-bot 监控预警的服务、sshrc 挂载、脚本和配置文件，确定继续吗？(Y/N): " confirm
+	case "$confirm" in
+		[Yy]) ;;
+		*) echo "已取消"; return 1 ;;
+	esac
+	if type -P systemctl >/dev/null 2>&1 && [ -f "$TG_NOTIFY_UNIT" ]; then
+		command systemctl disable --now tg-check-notify.service >/dev/null 2>&1
+		rm -f "$TG_NOTIFY_UNIT"
+		tg_notify_systemd && command systemctl daemon-reload
+		echo "已停用并删除 tg-check-notify.service"
+	fi
+	tg_notify_crontab_clean
+	tg_notify_kill_monitor
+	tg_notify_migrate_legacy
+	tg_notify_sshrc_remove
+	rm -f "$TG_NOTIFY_MONITOR" "$TG_NOTIFY_SSH" "$TG_NOTIFY_CONF"
+	rmdir /etc/nimbus 2>/dev/null
+	echo -e "${gl_lv}TG-bot 监控预警已卸载${gl_bai}"
+}
+
+tg_notify_menu() {
+	local choice
+	while true; do
+		clear
+		echo "TG-bot监控预警"
+		echo "------------------------------------------------"
+		echo "配置 Telegram 机器人后，本机 CPU、内存、硬盘、流量超过阈值，或有 SSH 登录时，会向你推送通知"
+		echo -e "${gl_hui}-关于流量，重启服务器将重新计算-${gl_bai}"
+		if [ -f "$TG_NOTIFY_CONF" ]; then
+			echo -e "当前状态: 已配置，资源监控 ${gl_huang}$(tg_notify_monitor_status)${gl_bai}"
+		else
+			echo -e "当前状态: ${gl_hui}未配置${gl_bai}"
+		fi
+		echo "------------------------------------------------"
+		echo "1. 安装 / 重新配置          2. 卸载"
+		echo "------------------------------------------------"
+		echo "0. 返回上一级选单"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) tg_notify_install; break_end ;;
+			2) tg_notify_uninstall; break_end ;;
+			*) break ;;
+		esac
+	done
+}
+
 linux_Settings() {
 
 	while true; do
@@ -5378,58 +6004,7 @@ EOF
 
 		  26)
 			  root_use
-			  echo "TG-bot监控预警功能"
-			  echo "视频介绍: https://youtu.be/vLL-eb3Z_TY"
-			  echo "------------------------------------------------"
-			  echo "您需要配置tg机器人API和接收预警的用户ID，即可实现本机CPU，内存，硬盘，流量，SSH登录的实时监控预警"
-			  echo "到达阈值后会向用户发预警消息"
-			  echo -e "${gl_hui}-关于流量，重启服务器将重新计算-${gl_bai}"
-			  read -e -p "确定继续吗？(Y/N): " choice
-
-			  case "$choice" in
-				[Yy])
-				  cd ~
-				  install nano tmux bc jq
-				  check_crontab_installed
-				  if [ -f ~/TG-check-notify.sh ]; then
-					  chmod +x ~/TG-check-notify.sh
-					  nano ~/TG-check-notify.sh
-				  else
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/TG-check-notify.sh
-					  chmod +x ~/TG-check-notify.sh
-					  nano ~/TG-check-notify.sh
-				  fi
-				  tmux kill-session -t TG-check-notify > /dev/null 2>&1
-				  tmux new -d -s TG-check-notify "~/TG-check-notify.sh"
-				  crontab -l | grep -v '~/TG-check-notify.sh' | crontab - > /dev/null 2>&1
-				  (crontab -l ; echo "@reboot tmux new -d -s TG-check-notify '~/TG-check-notify.sh'") | crontab - > /dev/null 2>&1
-
-				  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/TG-SSH-check-notify.sh > /dev/null 2>&1
-				  sed -i "3i$(grep '^TELEGRAM_BOT_TOKEN=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh > /dev/null 2>&1
-				  sed -i "4i$(grep '^CHAT_ID=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh
-				  chmod +x ~/TG-SSH-check-notify.sh
-
-				  # 添加到 ~/.profile 文件中
-				  if ! grep -q 'bash ~/TG-SSH-check-notify.sh' ~/.profile > /dev/null 2>&1; then
-					  echo 'bash ~/TG-SSH-check-notify.sh' >> ~/.profile
-					  if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
-						 echo 'source ~/.profile' >> ~/.bashrc
-					  fi
-				  fi
-
-				  source ~/.profile
-
-				  clear
-				  echo "TG-bot预警系统已启动"
-				  echo -e "${gl_hui}你还可以将root目录中的TG-check-notify.sh预警文件放到其他机器上直接使用！${gl_bai}"
-				  ;;
-				[Nn])
-				  echo "已取消"
-				  ;;
-				*)
-				  echo "无效的选择，请输入 Y 或 N。"
-				  ;;
-			  esac
+			  tg_notify_menu
 			  ;;
 
 		  22)
@@ -5875,10 +6450,10 @@ else
 				* )
 					echo "错误：未知参数 '$1'"
 					echo "用法："
-					echo "  k sshkey                  进入交互菜单"
-					echo "  k sshkey \"<pubkey>\"     直接导入 SSH 公钥"
-					echo "  k sshkey <url>            从 URL 导入 SSH 公钥"
-					echo "  k sshkey github <user>    从 GitHub 导入 SSH 公钥"
+					echo "  nb sshkey                 进入交互菜单"
+					echo "  nb sshkey \"<pubkey>\"    直接导入 SSH 公钥"
+					echo "  nb sshkey <url>           从 URL 导入 SSH 公钥"
+					echo "  nb sshkey github <user>   从 GitHub 导入 SSH 公钥"
 					;;
 			esac
 

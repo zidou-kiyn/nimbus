@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.0-6366f1?style=flat-square" alt="version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.0.1-6366f1?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/shell-bash-38bdf8?style=flat-square&logo=gnubash&logoColor=white" alt="bash">
   <img src="https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20RHEL%20%7C%20Alpine-0ea5e9?style=flat-square&logo=linux&logoColor=white" alt="platform">
   <a href="https://github.com/zidou-kiyn/nimbus/commits/main"><img src="https://img.shields.io/github/last-commit/zidou-kiyn/nimbus?style=flat-square&color=818cf8" alt="last commit"></a>
@@ -45,7 +45,7 @@ bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/
 首次运行后会安装快捷命令 **`nb`**，以后直接输入 `nb` 打开主菜单。
 
 ```text
-Nimbus · 云服务器工具箱 v1.0.0
+Nimbus · 云服务器工具箱 v1.0.1
 ------------------------
 1.   系统信息查询
 2.   系统更新

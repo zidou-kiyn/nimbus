@@ -1,29 +1,36 @@
 #!/bin/bash
+# shellcheck disable=SC2154  # isp_info / country / masked_ip 等变量来自配置文件
+# Nimbus TG-bot 资源监控：CPU / 内存 / 硬盘 / 流量超过阈值时推送 Telegram 告警
+# 配置由 nimbus 菜单「TG-bot系统监控预警」交互生成，写入 /etc/nimbus/tg-notify.conf
+# 部署位置 /root/TG-check-notify.sh，由 systemd 服务 tg-check-notify.service 托管
 
-# 你需要配置Telegram Bot Token和Chat ID
-TELEGRAM_BOT_TOKEN="输入TG的机器人API"
-CHAT_ID="输入TG的接收通知的账号ID"
+# 固定 C 语言环境，避免 free/df 输出被本地化后 awk 匹配失败
+export LC_ALL=C
 
+CONFIG_FILE="/etc/nimbus/tg-notify.conf"
 
-# 你可以修改监控阈值设置
-CPU_THRESHOLD=70
-MEMORY_THRESHOLD=70
-DISK_THRESHOLD=70
-NETWORK_THRESHOLD_GB=1000
+if [ ! -r "$CONFIG_FILE" ]; then
+    echo "配置文件不存在或不可读: $CONFIG_FILE，请先运行 nimbus 菜单「TG-bot系统监控预警」" >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+. "$CONFIG_FILE"
 
+for required in TELEGRAM_BOT_TOKEN CHAT_ID isp_info country masked_ip \
+    CPU_THRESHOLD MEMORY_THRESHOLD DISK_THRESHOLD NETWORK_THRESHOLD_GB; do
+    if [ -z "${!required}" ]; then
+        echo "配置不完整: $CONFIG_FILE 缺少 $required，请重新运行 nimbus 菜单配置" >&2
+        exit 1
+    fi
+done
 
-
-# 获取设备信息的变量
-country=$(curl -s ipinfo.io/$public_ip/country)
-isp_info=$(curl -s ipinfo.io/org | sed -e 's/\"//g' | awk -F' ' '{print $2}')
-
-ipv4_address=$(curl -s ipv4.ip.sb)
-masked_ip=$(echo $ipv4_address | awk -F'.' '{print "*."$3"."$4}')
-
-# 发送Telegram通知的函数
+# 发送Telegram通知的函数（Token 经 stdin 传给 curl，不出现在进程参数中）
 send_tg_notification() {
     local MESSAGE=$1
-    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" -d "chat_id=$CHAT_ID" -d "text=$MESSAGE"
+    printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" |
+        curl -s -m 10 -X POST -K - \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}" >/dev/null
 }
 
 
@@ -65,10 +72,11 @@ get_tx_bytes() {
 
 # 检查并发送通知
 check_and_notify() {
-    local USAGE=$1
-    local TYPE=$2
-    local THRESHOLD=$3
-    local CURRENT_VALUE=$4
+    local USAGE="$1"
+    local TYPE="$2"
+    local THRESHOLD="$3"
+    # shellcheck disable=SC2034  # 保留原接口的第 4 个参数
+    local CURRENT_VALUE="$4"
 
     if (( $(echo "$USAGE > $THRESHOLD" | bc -l) )); then
         send_tg_notification "警告: ${isp_info}-${country}-${masked_ip} 的 $TYPE 使用率已达到 $USAGE%，超过阈值 $THRESHOLD%。"
@@ -83,9 +91,9 @@ while true; do
     RX_GB=$(get_rx_bytes)
     TX_GB=$(get_tx_bytes)
 
-    check_and_notify $CPU_USAGE "CPU" $CPU_THRESHOLD $CPU_USAGE
-    check_and_notify $MEMORY_USAGE "内存" $MEMORY_THRESHOLD $MEMORY_USAGE
-    check_and_notify $DISK_USAGE "硬盘" $DISK_THRESHOLD $DISK_USAGE
+    check_and_notify "$CPU_USAGE" "CPU" "$CPU_THRESHOLD" "$CPU_USAGE"
+    check_and_notify "$MEMORY_USAGE" "内存" "$MEMORY_THRESHOLD" "$MEMORY_USAGE"
+    check_and_notify "$DISK_USAGE" "硬盘" "$DISK_THRESHOLD" "$DISK_USAGE"
 
     # 检查入站流量是否超过阈值
     if (( $(echo "$RX_GB > $NETWORK_THRESHOLD_GB" | bc -l) )); then
