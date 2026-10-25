@@ -14,7 +14,7 @@ gl_kjlan='\033[96m'
 
 canshu="default"
 permission_granted="false"
-ENABLE_STATS="true"
+ENABLE_STATS="false"
 KPANEL_WEB_CERTIFICATE_PROTOCOL_VERSION="1"
 KPANEL_WEB_CERTIFICATE_REPLACE_PROTOCOL_VERSION="1"
 KPANEL_WEB_CERTIFICATE_FORCE_RENEW_PROTOCOL_VERSION="1"
@@ -154,46 +154,8 @@ CheckFirstRun_true() {
 
 
 
-# 收集功能埋点信息的函数，记录当前脚本版本号，使用时间，系统版本，CPU架构，机器所在国家和用户使用的功能名称，绝对不涉及任何敏感信息，请放心！请相信我！
-# 为什么要设计这个功能，目的更好的了解用户喜欢使用的功能，进一步优化功能推出更多符合用户需求的功能。
-# 全文可搜搜 send_stats 函数调用位置，透明开源，如有顾虑可拒绝使用。
-
-
-
-stats_json_escape() {
-	local value="$1" code octal control escaped
-	value=${value//\\/\\\\}
-	value=${value//\"/\\\"}
-	for ((code=1; code<32; code++)); do
-		printf -v octal '%03o' "$code"
-		printf -v control '%b' "\\$octal"
-		printf -v escaped '\\u%04x' "$code"
-		value=${value//"$control"/"$escaped"}
-	done
-	printf '%s' "$value"
-}
-
-send_stats() {
-	[ "${ENABLE_STATS:-true}" != false ] || return 0
-	local action="${1:-}" now="$SECONDS"
-	if [[ "${KJ_STATS_PID:-}" =~ ^[0-9]+$ ]] && kill -0 "$KJ_STATS_PID" 2>/dev/null; then return 0; fi
-	if [[ "${KJ_STATS_LAST_SEND:-}" =~ ^[0-9]+$ ]] && (( now - KJ_STATS_LAST_SEND < 2 )); then return 0; fi
-	KJ_STATS_LAST_SEND="$now"
-	(
-		local country os_info cpu_arch payload
-		country=$(curl -fsS --connect-timeout 2 --max-time 3 --max-filesize 64 https://ipinfo.io/country 2>/dev/null) || country=""
-		[[ "$country" =~ ^[A-Z]{2}$ ]] || country=""
-		os_info=$(grep PRETTY_NAME /etc/os-release | cut -d '=' -f2 | tr -d '"')
-		cpu_arch=$(uname -m)
-		printf -v payload '{"action":"%s","timestamp":"%s","country":"%s","os_info":"%s","cpu_arch":"%s","version":"%s"}' \
-			"$(stats_json_escape "$action")" "$(date -u '+%Y-%m-%d %H:%M:%S')" "$country" \
-			"$(stats_json_escape "$os_info")" "$(stats_json_escape "$cpu_arch")" "$(stats_json_escape "$sh_v")"
-		curl -fsS --connect-timeout 2 --max-time 5 -X POST https://api.kejilion.pro/api/log \
-			-H 'Content-Type: application/json' --data-binary "$payload" >/dev/null 2>&1
-	) &
-	KJ_STATS_PID=$!
-	return 0
-}
+# 遥测已移除：保留空函数，原有 send_stats 调用点均为无操作。
+send_stats() { :; }
 
 
 yinsiyuanquan2() {
@@ -1640,7 +1602,7 @@ install_ldnmp() {
 	  fix_phpfpm_conf php74
 
 	  # mysql调优
-	  wget -O /home/custom_mysql_config.cnf ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/custom_mysql_config-1.cnf
+	  wget -O /home/custom_mysql_config.cnf ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/custom_mysql_config-1.cnf
 	  docker cp /home/custom_mysql_config.cnf mysql:/etc/mysql/conf.d/
 	  rm -rf /home/custom_mysql_config.cnf
 
@@ -1664,7 +1626,7 @@ install_certbot() {
 	if [ ! -e auto_cert_renewal.sh ] && [ ! -L auto_cert_renewal.sh ]; then
 		local renewal_download renewal_digest
 		renewal_download=$(mktemp ./auto_cert_renewal.sh.XXXXXX) || return 1
-		if ! curl -fsS --max-time 30 -o "$renewal_download" "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh"; then
+		if ! curl -fsS --max-time 30 -o "$renewal_download" "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/auto_cert_renewal.sh"; then
 			rm -f "$renewal_download"
 			return 1
 		fi
@@ -4303,7 +4265,7 @@ web_security() {
 				  1)
 					  f2b_install_sshd
 					  cd /etc/fail2ban/filter.d
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/fail2ban-nginx-cc.conf
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/fail2ban-nginx-cc.conf
 					  wget ${gh_proxy}raw.githubusercontent.com/linuxserver/fail2ban-confs/master/filter.d/nginx-418.conf
 					  wget ${gh_proxy}raw.githubusercontent.com/linuxserver/fail2ban-confs/master/filter.d/nginx-deny.conf
 					  wget ${gh_proxy}raw.githubusercontent.com/linuxserver/fail2ban-confs/master/filter.d/nginx-unauthorized.conf
@@ -4417,7 +4379,7 @@ web_security() {
 					  cd ~
 					  install jq bc
 					  check_crontab_installed
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/CF-Under-Attack.sh
 					  chmod +x CF-Under-Attack.sh
 					  sed -i "s/AAAA/$cfuser/g" ~/CF-Under-Attack.sh
 					  sed -i "s/BBBB/$cftoken/g" ~/CF-Under-Attack.sh
@@ -4544,13 +4506,13 @@ ldnmp_optimization_mode() {
 	sed -i "s/worker_processes.*/worker_processes ${cpu_cores};/" /home/web/nginx.conf
 	sed -i "s/worker_connections.*/worker_connections ${connections};/" /home/web/nginx.conf
 
-	wget -O /home/optimized_php.ini "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/optimized_php.ini" &&
+	wget -O /home/optimized_php.ini "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/optimized_php.ini" &&
 		docker cp /home/optimized_php.ini php:/usr/local/etc/php/conf.d/optimized_php.ini
 	docker inspect php74 >/dev/null 2>&1 &&
 		docker cp /home/optimized_php.ini php74:/usr/local/etc/php/conf.d/optimized_php.ini
 	rm -f /home/optimized_php.ini
 
-	wget -O /home/www.conf "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/${php_fpm_source}" &&
+	wget -O /home/www.conf "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/${php_fpm_source}" &&
 		docker cp /home/www.conf php:/usr/local/etc/php-fpm.d/www.conf
 	docker inspect php74 >/dev/null 2>&1 &&
 		docker cp /home/www.conf php74:/usr/local/etc/php-fpm.d/www.conf
@@ -4566,7 +4528,7 @@ ldnmp_optimization_mode() {
 	docker inspect php74 >/dev/null 2>&1 && fix_phpfpm_conf php74
 
 	wget -O /home/custom_mysql_config.cnf \
-		"${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/${mysql_source}" &&
+		"${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/${mysql_source}" &&
 		docker cp /home/custom_mysql_config.cnf mysql:/etc/mysql/conf.d/
 	rm -f /home/custom_mysql_config.cnf
 
@@ -6469,7 +6431,7 @@ kpanel_system_tuning_kernel_auto() {
 		return 1
 	}
 	script="$(mktemp /tmp/kejilion-system-tuning-network.XXXXXX)" || return 1
-	url="${gh_proxy}raw.githubusercontent.com/kejilion/sh/${KPANEL_SYSTEM_TUNING_NETWORK_COMMIT}/network-optimize.sh"
+	url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/${KPANEL_SYSTEM_TUNING_NETWORK_COMMIT}/network-optimize.sh"
 	kpanel_system_tuning_download_verified "$url" "$KPANEL_SYSTEM_TUNING_NETWORK_SHA256" "$script" || { rm -f -- "$script"; return 1; }
 	kpanel_system_tuning_run_command bash "$script"
 	local result=$?
@@ -10075,7 +10037,7 @@ bbrv3() {
 				local keyring="/usr/share/keyrings/xanmod-archive-keyring.gpg"
 				local list_file="/etc/apt/sources.list.d/xanmod-release.list"
 				local key_url="https://dl.xanmod.org/archive.key"
-				local fallback_key_url="${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/archive.key"
+				local fallback_key_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/archive.key"
 				local os_codename=""
 
 				if command -v lsb_release >/dev/null 2>&1; then
@@ -11044,14 +11006,14 @@ Kernel_optimize() {
 			  cd ~
 			  clear
 			  restore_defaults
-			  curl -sS ${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh -o /tmp/network-optimize.sh && source /tmp/network-optimize.sh && restore_network_defaults
+			  curl -sS ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/refs/heads/main/network-optimize.sh -o /tmp/network-optimize.sh && source /tmp/network-optimize.sh && restore_network_defaults
 			  send_stats "还原默认设置"
 			  ;;
 
 		  7)
 			  cd ~
 			  clear
-			  curl -sS ${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh | bash
+			  curl -sS ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/refs/heads/main/network-optimize.sh | bash
 			  send_stats "内核自动调优"
 			  ;;
 
@@ -16209,7 +16171,7 @@ ldnmp_protection_action_apply() {
 		fail2ban-install)
 			f2b_install_sshd
 			mkdir -p /etc/fail2ban/filter.d /etc/fail2ban/jail.d
-			curl -sS -o /etc/fail2ban/filter.d/fail2ban-nginx-cc.conf "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/fail2ban-nginx-cc.conf"
+			curl -sS -o /etc/fail2ban/filter.d/fail2ban-nginx-cc.conf "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/fail2ban-nginx-cc.conf"
 			curl -sS -o /etc/fail2ban/jail.d/nginx-docker-cc.conf "${gh_proxy}raw.githubusercontent.com/kejilion/config/main/fail2ban/nginx-docker-cc.conf"
 			sed -i '/cloudflare/d' /etc/fail2ban/jail.d/nginx-docker-cc.conf
 			fail2ban-client reload ;;
@@ -16247,7 +16209,7 @@ ldnmp_protection_action_apply() {
 				cd /root || return 1
 				install jq bc
 				check_crontab_installed
-				curl -sS -o CF-Under-Attack.sh "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh"
+				curl -sS -o CF-Under-Attack.sh "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/CF-Under-Attack.sh"
 				chmod 700 CF-Under-Attack.sh
 				secret_content=$(< CF-Under-Attack.sh)
 				secret_content=${secret_content//AAAA/$cfuser}
@@ -17436,7 +17398,7 @@ linux_ldnmp() {
 	  read -e -p "输入远程服务器密码: " usepasswd
 
 	  cd ~
-	  wget -O ${useip}_beifen.sh ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/beifen.sh > /dev/null 2>&1
+	  wget -O ${useip}_beifen.sh ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/beifen.sh > /dev/null 2>&1
 	  chmod +x ${useip}_beifen.sh
 
 	  sed -i "s/0.0.0.0/$useip/g" ${useip}_beifen.sh
@@ -17951,27 +17913,8 @@ stats_enabled = (sys.argv[2].lower() == "true") if len(sys.argv) > 2 else True
 script_version = sys.argv[3] if len(sys.argv) > 3 else ""
 
 def send_stat(action):
-    if not stats_enabled:
-        return
-    payload = {
-        "action": action,
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "country": "",
-        "os_info": platform.platform(),
-        "cpu_arch": platform.machine(),
-        "version": script_version,
-    }
-    try:
-        req = urllib.request.Request(
-            "https://api.kejilion.pro/api/log",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=3):
-            pass
-    except Exception:
-        pass
+    # 遥测已移除
+    return
 
 with open(path, 'r', encoding='utf-8') as f:
     obj = json.load(f)
@@ -23439,7 +23382,7 @@ run_ai_cli_manager() (
 	case "$app" in claude-code|codex|opencode|antigravity-cli|cursor) ;; *) return 1 ;; esac
 	manager=$(mktemp "${TMPDIR:-/tmp}/kejilion-ai-cli.XXXXXX") || return 1
 	trap 'rm -f -- "$manager"' EXIT
-	curl -fLsS --connect-timeout 15 --max-time 120 "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/ai_cli_manager.sh" -o "$manager" || return 1
+	curl -fLsS --connect-timeout 15 --max-time 120 "${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/ai_cli_manager.sh" -o "$manager" || return 1
 	[ -s "$manager" ] && bash -n "$manager" || return 1
 	. "$manager" || return 1
 	ai_cli_main "$app"
@@ -27320,11 +27263,11 @@ discourse,yunsou,ahhhhfs,nsgame,gying" \
 		  ;;
 
 	  115|hermes)
-	  	  bash <(curl -sL ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/hermes_manager.sh)
+	  	  bash <(curl -sL ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/hermes_manager.sh)
 		  ;;
 
 	  116|deepseek-harness|DeepSeek-Harness|dsh)
-		  bash <(curl -fsSL ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/deepseek_harness_manager.sh)
+		  bash <(curl -fsSL ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/deepseek_harness_manager.sh)
 		  ;;
 
 	  119|claude-code|claude)
@@ -33337,7 +33280,7 @@ EOF
 					  chmod +x ~/TG-check-notify.sh
 					  nano ~/TG-check-notify.sh
 				  else
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-check-notify.sh
+					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/TG-check-notify.sh
 					  chmod +x ~/TG-check-notify.sh
 					  nano ~/TG-check-notify.sh
 				  fi
@@ -33346,7 +33289,7 @@ EOF
 				  crontab -l | grep -v '~/TG-check-notify.sh' | crontab - > /dev/null 2>&1
 				  (crontab -l ; echo "@reboot tmux new -d -s TG-check-notify '~/TG-check-notify.sh'") | crontab - > /dev/null 2>&1
 
-				  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-SSH-check-notify.sh > /dev/null 2>&1
+				  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/TG-SSH-check-notify.sh > /dev/null 2>&1
 				  sed -i "3i$(grep '^TELEGRAM_BOT_TOKEN=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh > /dev/null 2>&1
 				  sed -i "4i$(grep '^CHAT_ID=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh
 				  chmod +x ~/TG-SSH-check-notify.sh
@@ -33378,7 +33321,7 @@ EOF
 			  root_use
 			  send_stats "修复SSH高危漏洞"
 			  cd ~
-			  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/upgrade_openssh9.8p1.sh
+			  curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/upgrade_openssh9.8p1.sh
 			  chmod +x ~/upgrade_openssh9.8p1.sh
 			  ~/upgrade_openssh9.8p1.sh
 			  rm -f ~/upgrade_openssh9.8p1.sh
@@ -33525,50 +33468,11 @@ EOF
 			  ;;
 		  100)
 
-			root_use
-			while true; do
-			  clear
-			  if grep -q '^ENABLE_STATS="true"' /usr/local/bin/k > /dev/null 2>&1; then
-			  	local status_message="${gl_lv}正在采集数据${gl_bai}"
-			  elif grep -q '^ENABLE_STATS="false"' /usr/local/bin/k > /dev/null 2>&1; then
-			  	local status_message="${gl_hui}采集已关闭${gl_bai}"
-			  else
-			  	local status_message="无法确定的状态"
-			  fi
-
-			  echo "隐私与安全"
-			  echo "脚本将收集用户使用功能的数据，优化脚本体验，制作更多好玩好用的功能"
-			  echo "将收集脚本版本号，使用的时间，系统版本，CPU架构，机器所属国家和使用的功能的名称，"
-			  echo "------------------------------------------------"
-			  echo -e "当前状态: $status_message"
-			  echo "--------------------"
-			  echo "1. 开启采集"
-			  echo "2. 关闭采集"
-			  echo "--------------------"
-			  echo "0. 返回上一级选单"
-			  echo "--------------------"
-			  read -e -p "请输入你的选择: " sub_choice
-			  case $sub_choice in
-				  1)
-					  cd ~
-					  sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="true"/' /usr/local/bin/k
-					  sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="true"/' ~/kejilion.sh
-					  echo "已开启采集"
-					  send_stats "隐私与安全已开启采集"
-					  ;;
-				  2)
-					  cd ~
-					  sed -i 's/^ENABLE_STATS="true"/ENABLE_STATS="false"/' /usr/local/bin/k
-					  sed -i 's/^ENABLE_STATS="true"/ENABLE_STATS="false"/' ~/kejilion.sh
-					  echo "已关闭采集"
-					  send_stats "隐私与安全已关闭采集"
-					  ;;
-				  *)
-					  break
-					  ;;
-			  esac
-			done
-			  ;;
+			clear
+			echo "隐私与安全"
+			echo "本分支已移除全部遥测/数据采集功能。"
+			break_end
+			;;
 
 		  101)
 			  clear
@@ -34038,11 +33942,11 @@ games_server_tools() {
 	  case $sub_choice in
 
 		  1) send_stats "幻兽帕鲁开服脚本" ; cd ~
-			 curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/palworld.sh ; chmod +x palworld.sh ; ./palworld.sh
+			 curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/palworld.sh ; chmod +x palworld.sh ; ./palworld.sh
 			 exit
 			 ;;
 		  2) send_stats "我的世界开服脚本" ; cd ~
-			 curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/mc.sh ; chmod +x mc.sh ; ./mc.sh
+			 curl -sS -O ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/mc.sh ; chmod +x mc.sh ; ./mc.sh
 			 exit
 			 ;;
 
@@ -34089,12 +33993,12 @@ while true; do
 	clear
 	echo "更新日志"
 	echo "------------------------"
-	echo "全部日志: ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/kejilion_sh_log.txt"
+	echo "全部日志: ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion_sh_log.txt"
 	echo "------------------------"
 
-	curl -s --max-time 15 ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/kejilion_sh_log.txt | tail -n 30
+	curl -s --max-time 15 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion_sh_log.txt | tail -n 30
 	# 只下载前5行获取版本号，避免下载整个脚本
-	local sh_v_new=$(curl -s --max-time 15 -r 0-200 ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/kejilion.sh | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
+	local sh_v_new=$(curl -s --max-time 15 -r 0-200 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
 
 	if [ -z "$sh_v_new" ]; then
 		echo -e "${gl_hong}无法获取最新版本信息，请检查网络连接${gl_bai}"
@@ -34126,11 +34030,7 @@ while true; do
 			clear
 			local country=$(curl -s --max-time 5 ipinfo.io/country)
 			local download_url
-			if [ "$country" = "CN" ]; then
-				download_url="${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/cn/kejilion.sh"
-			else
-				download_url="${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/kejilion.sh"
-			fi
+			download_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh"
 
 			# 备份当前脚本
 			cp -f ~/kejilion.sh ~/kejilion.sh.bak 2>/dev/null
@@ -34142,6 +34042,7 @@ while true; do
 			   head -1 "$tmp_file" | grep -q '^#!/bin/bash'; then
 				chmod +x "$tmp_file"
 				mv -f "$tmp_file" ~/kejilion.sh
+				[ "$country" = "CN" ] && sed -i 's/^canshu="default"/canshu="CN"/' ~/kejilion.sh
 				canshu_v6
 				CheckFirstRun_true
 				yinsiyuanquan2
@@ -34179,7 +34080,7 @@ while true; do
 			fi
 
 			# 构建健壮的自动更新命令：下载到临时文件 → 校验 → 备份 → 替换 → 恢复本地设置 → 部署
-			SH_Update_task="cd ~ && tmp=\$(mktemp ~/kejilion_tmp.XXXXXX) && curl -sS --max-time 60 --fail -o \"\$tmp\" ${cron_proxy}raw.githubusercontent.com/kejilion/sh/main/kejilion.sh && [ -s \"\$tmp\" ] && head -1 \"\$tmp\" | grep -q '^#!/bin/bash' && cp -f ~/kejilion.sh ~/kejilion.sh.bak 2>/dev/null && chmod +x \"\$tmp\" && mv -f \"\$tmp\" ~/kejilion.sh"
+			SH_Update_task="cd ~ && tmp=\$(mktemp ~/kejilion_tmp.XXXXXX) && curl -sS --max-time 60 --fail -o \"\$tmp\" ${cron_proxy}raw.githubusercontent.com/zidou-kiyn/sh/main/kejilion.sh && [ -s \"\$tmp\" ] && head -1 \"\$tmp\" | grep -q '^#!/bin/bash' && cp -f ~/kejilion.sh ~/kejilion.sh.bak 2>/dev/null && chmod +x \"\$tmp\" && mv -f \"\$tmp\" ~/kejilion.sh"
 			# 追加设置恢复
 			if [ -n "$cron_sed_cmd" ]; then
 				SH_Update_task="$SH_Update_task && $cron_sed_cmd"
