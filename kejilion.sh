@@ -10558,6 +10558,21 @@ for item in workspaces:
 		rm -rf "$tmp_payload"; break_end
 	}
 
+	openclaw_read_import_path() {
+		local prompt_text="$1"
+		local file_path
+		echo "$prompt_text" >&2
+		if command -v rz >/dev/null 2>&1 && openclaw_is_interactive_terminal; then
+			echo "提示：检测到 rz，可输入 rz 后回车上传，再输入本机保存路径。" >&2
+		fi
+		read -e -p "请输入备份文件路径: " file_path
+		if [ "$file_path" = "rz" ] && command -v rz >/dev/null 2>&1 && openclaw_is_interactive_terminal; then
+			rz
+			read -e -p "上传完成，请输入备份文件路径: " file_path
+		fi
+		echo "$file_path"
+	}
+
 	openclaw_memory_backup_import() {
 		send_stats "OpenClaw记忆全量还原"
 		local archive_path=$(openclaw_read_import_path "还原记忆全量 (支持多智能体)")
