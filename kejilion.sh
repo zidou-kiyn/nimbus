@@ -3501,36 +3501,6 @@ patch_wp_debug() {
 
 
 
-patch_wp_url() {
-  local HOME_URL="$1"
-  local SITE_URL="$2"
-  local TARGET_DIR="/home/web/html"
-
-  find "$TARGET_DIR" -type f -name "wp-config-sample.php" | while read -r FILE; do
-	# 删除旧定义
-	sed -i "/define(['\"]WP_HOME['\"].*/d" "$FILE"
-	sed -i "/define(['\"]WP_SITEURL['\"].*/d" "$FILE"
-
-	# 生成插入内容
-	INSERT="
-define('WP_HOME', '$HOME_URL');
-define('WP_SITEURL', '$SITE_URL');
-"
-
-	# 插入到 “Happy publishing” 之前
-	awk -v insert="$INSERT" '
-	  /Happy publishing/ {
-		print insert
-	  }
-	  { print }
-	' "$FILE" > "$FILE.tmp" && mv -f "$FILE.tmp" "$FILE"
-
-	echo "[+] Updated WP_HOME and WP_SITEURL in $FILE"
-  done
-}
-
-
-
 nginx_br() {
 
 	local mode=$1
@@ -5164,54 +5134,6 @@ nginx_web_on() {
 	else
 		echo "https://$yuming"
 	fi
-}
-
-
-
-ldnmp_wp() {
-  clear
-  # wordpress
-  webname="WordPress"
-  yuming="${1:-}"
-  send_stats "安装$webname"
-  echo "开始部署 $webname"
-  if [ -z "$yuming" ]; then
-	add_yuming
-  fi
-  repeat_add_yuming
-  ldnmp_install_status
-
-
-  install_ssltls
-  certs_status
-  add_db
-
-  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/wordpress.com.conf
-  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
-  nginx_http_on
-
-
-  cd /home/web/html
-  prepare_ldnmp_site_root "$yuming" || return 1
-  cd $yuming
-  wget -O latest.zip ${gh_proxy}github.com/kejilion/Website_source_code/raw/refs/heads/main/wp-latest.zip
-  unzip latest.zip
-  rm latest.zip
-  echo "define('FS_METHOD', 'direct'); define('WP_REDIS_HOST', 'redis'); define('WP_REDIS_PORT', '6379'); define('WP_REDIS_MAXTTL', 86400); define('WP_CACHE_KEY_SALT', '${yuming}_');" >> /home/web/html/$yuming/wordpress/wp-config-sample.php
-  sed -i "s|database_name_here|$dbname|g" /home/web/html/$yuming/wordpress/wp-config-sample.php
-  sed -i "s|username_here|$dbuse|g" /home/web/html/$yuming/wordpress/wp-config-sample.php
-  sed -i "s|password_here|$dbusepasswd|g" /home/web/html/$yuming/wordpress/wp-config-sample.php
-  sed -i "s|localhost|mysql|g" /home/web/html/$yuming/wordpress/wp-config-sample.php
-  patch_wp_url "https://$yuming" "https://$yuming"
-  cp /home/web/html/$yuming/wordpress/wp-config-sample.php /home/web/html/$yuming/wordpress/wp-config.php
-
-
-  normalize_ldnmp_site_permissions "$yuming" || return 1
-  chmod 0640 "/home/web/html/$yuming/wordpress/wp-config.php" || return 1
-  restart_ldnmp
-  nginx_web_on
-
 }
 
 
@@ -11115,16 +11037,16 @@ linux_ldnmp() {
 	echo -e "${gl_huang}LDNMP建站"
 	ldnmp_tato
 	echo -e "${gl_huang}------------------------"
-	echo -e "${gl_huang}1.   ${gl_bai}安装LDNMP环境 ${gl_huang}★${gl_bai}                   ${gl_huang}2.   ${gl_bai}安装WordPress ${gl_huang}★${gl_bai}"
+	echo -e "${gl_huang}1.   ${gl_bai}安装LDNMP环境 ${gl_huang}★${gl_bai}"
 	echo -e "${gl_huang}3.   ${gl_bai}安装Discuz论坛                    ${gl_huang}4.   ${gl_bai}安装可道云桌面"
-	echo -e "${gl_huang}5.   ${gl_bai}安装苹果CMS影视站                 ${gl_huang}6.   ${gl_bai}安装独角数发卡网"
+	echo -e "${gl_huang}6.   ${gl_bai}安装独角数发卡网"
 	echo -e "${gl_huang}7.   ${gl_bai}安装flarum论坛网站                ${gl_huang}8.   ${gl_bai}安装typecho轻量博客网站"
 	echo -e "${gl_huang}9.   ${gl_bai}安装LinkStack共享链接平台         ${gl_huang}20.  ${gl_bai}自定义动态站点"
 	echo -e "${gl_huang}------------------------"
 	echo -e "${gl_huang}21.  ${gl_bai}仅安装nginx ${gl_huang}★${gl_bai}                     ${gl_huang}22.  ${gl_bai}站点重定向"
 	echo -e "${gl_huang}23.  ${gl_bai}站点反向代理-IP+端口 ${gl_huang}★${gl_bai}            ${gl_huang}24.  ${gl_bai}站点反向代理-域名"
 	echo -e "${gl_huang}25.  ${gl_bai}安装Bitwarden密码管理平台         ${gl_huang}26.  ${gl_bai}安装Halo博客网站"
-	echo -e "${gl_huang}27.  ${gl_bai}安装AI绘画提示词生成器            ${gl_huang}28.  ${gl_bai}站点反向代理-负载均衡"
+	echo -e "${gl_huang}28.  ${gl_bai}站点反向代理-负载均衡"
 	echo -e "${gl_huang}29.  ${gl_bai}Stream四层代理转发                ${gl_huang}30.  ${gl_bai}自定义静态站点"
 	echo -e "${gl_huang}------------------------"
 	echo -e "${gl_huang}31.  ${gl_bai}站点数据管理 ${gl_huang}★${gl_bai}                    ${gl_huang}32.  ${gl_bai}备份全站数据"
@@ -11143,10 +11065,6 @@ linux_ldnmp() {
 	  ldnmp_install_status_one
 	  ldnmp_install_all
 		;;
-	  2)
-	  ldnmp_wp
-		;;
-
 	  3)
 	  clear
 	  # Discuz论坛
@@ -11230,55 +11148,6 @@ linux_ldnmp() {
 	  echo "密码: $dbusepasswd"
 	  echo "数据库名: $dbname"
 	  echo "redis主机: redis"
-
-		;;
-
-	  5)
-	  clear
-	  # 苹果CMS
-	  webname="苹果CMS"
-	  send_stats "安装$webname"
-	  echo "开始部署 $webname"
-	  add_yuming
-	  repeat_add_yuming
-	  ldnmp_install_status
-
-
-
-	  install_ssltls
-	  certs_status
-	  add_db
-
-	  wget -O /home/web/conf.d/map.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/maccms.com.conf
-	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
-
-	  nginx_http_on
-
-	  cd /home/web/html
-	  prepare_ldnmp_site_root "$yuming" || return 1
-	  cd $yuming
-	  # wget ${gh_proxy}github.com/magicblack/maccms_down/raw/master/maccms10.zip && unzip maccms10.zip && rm maccms10.zip
-	  wget ${gh_proxy}github.com/magicblack/maccms_down/raw/master/maccms10.zip && unzip maccms10.zip && mv maccms10-*/* . && rm -r maccms10-* && rm maccms10.zip
-	  cd /home/web/html/$yuming/template/ && wget ${gh_proxy}github.com/kejilion/Website_source_code/raw/main/DYXS2.zip && unzip DYXS2.zip && rm /home/web/html/$yuming/template/DYXS2.zip
-	  cp /home/web/html/$yuming/template/DYXS2/asset/admin/Dyxs2.php /home/web/html/$yuming/application/admin/controller
-	  cp /home/web/html/$yuming/template/DYXS2/asset/admin/dycms.html /home/web/html/$yuming/application/admin/view/system
-	  mv /home/web/html/$yuming/admin.php /home/web/html/$yuming/vip.php && wget -O /home/web/html/$yuming/application/extra/maccms.php ${gh_proxy}raw.githubusercontent.com/kejilion/Website_source_code/main/maccms.php
-
-	  normalize_ldnmp_site_permissions "$yuming" || return 1
-	  restart_ldnmp
-
-
-	  ldnmp_web_on
-	  echo "数据库地址: mysql"
-	  echo "数据库端口: 3306"
-	  echo "数据库名: $dbname"
-	  echo "用户名: $dbuse"
-	  echo "密码: $dbusepasswd"
-	  echo "数据库前缀: mac_"
-	  echo "------------------------"
-	  echo "安装成功后登录后台地址"
-	  echo "https://$yuming/vip.php"
 
 		;;
 
@@ -11730,38 +11599,6 @@ linux_ldnmp() {
 
 	  duankou=8010
 	  ldnmp_Proxy ${yuming} 127.0.0.1 $duankou
-
-		;;
-
-	  27)
-	  clear
-	  webname="AI绘画提示词生成器"
-	  send_stats "安装$webname"
-	  echo "开始部署 $webname"
-	  add_yuming
-	  nginx_install_status
-
-
-	  install_ssltls
-	  certs_status
-
-	  wget -O /home/web/conf.d/$yuming.conf ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/html.conf
-	  sed -i "s/yuming.com/$yuming/g" /home/web/conf.d/$yuming.conf
-
-	  nginx_http_on
-
-	  cd /home/web/html
-	  prepare_ldnmp_site_root "$yuming" || return 1
-	  cd $yuming
-
-	  wget ${gh_proxy}github.com/kejilion/Website_source_code/raw/refs/heads/main/ai_prompt_generator.zip
-	  unzip $(ls -t *.zip | head -n 1)
-	  rm -f $(ls -t *.zip | head -n 1)
-
-	  normalize_ldnmp_site_permissions "$yuming" || return 1
-	  docker exec nginx nginx -s reload
-
-	  nginx_web_on
 
 		;;
 
@@ -24294,7 +24131,6 @@ echo "docker容器管理      k docker ps |k docker 容器"
 echo "docker镜像管理      k docker img |k docker 镜像"
 echo "LDNMP站点管理       k web"
 echo "LDNMP缓存清理       k web cache"
-echo "安装WordPress       k wp |k wordpress |k wp xxx.com"
 echo "安装反向代理        k fd |k rp |k 反代 |k fd xxx.com"
 echo "安装负载均衡        k loadbalance |k 负载均衡"
 echo "安装L4负载均衡      k stream |k L4负载均衡"
@@ -24371,11 +24207,6 @@ else
 			disk_manager
 			;;
 
-		wp|wordpress)
-			shift
-			ldnmp_wp "$@"
-
-			;;
 		fd|rp|反代)
 			shift
 			ldnmp_Proxy "$@"
