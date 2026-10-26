@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.1"
+sh_v="1.2.2"
 
 
 gl_hui='\e[37m'
@@ -5336,7 +5336,7 @@ tmux_setup() {
 	clear
 	echo "tmux 及推荐配置"
 	echo "------------------------------------------------"
-	echo "安装 tmux，并写入 Nimbus 推荐配置（鼠标、vi 复制模式、5 万行历史、OSC 52 剪贴板、Alt+拖动复制等）"
+	echo "安装 tmux，并写入 Nimbus 推荐配置（鼠标、vi 复制模式、5 万行历史、OSC 52 剪贴板、Alt+拖动复制、prefix+m 开关鼠标等）"
 	echo -e "${gl_hui}配置来源: res/config/tmux/tmux.conf${gl_bai}"
 	echo "------------------------------------------------"
 	install tmux || return 1
