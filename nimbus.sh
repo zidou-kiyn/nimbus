@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.2"
+sh_v="1.2.3"
 
 
 gl_hui='\e[37m'
@@ -97,6 +97,22 @@ nimbus_self_install() {
 	fi
 }
 nimbus_self_install
+
+# 脚本自动更新的定时任务（参数: 分钟）
+nb_update_cron_line() {
+	echo "$1 2 * * * bash ~/nimbus.sh self-update >/dev/null 2>&1"
+}
+
+# 旧版自动更新任务是 bash -c '…' 内联命令，引号嵌套导致 CN/V6 设置每次更新后被还原；迁移为 nb self-update
+nb_migrate_update_cron() {
+	command -v crontab >/dev/null 2>&1 || return 0
+	local min
+	min=$(crontab -l 2>/dev/null | grep -F 'nimbus_tmp.XXXXXX' | awk 'NR==1{print $1}')
+	[ -n "$min" ] || return 0
+	case "$min" in *[!0-9]*) min=$(shuf -i 0-59 -n 1) ;; esac
+	(crontab -l 2>/dev/null | grep -v "nimbus.sh"; nb_update_cron_line "$min") | crontab -
+}
+nb_migrate_update_cron
 
 
 
@@ -6825,6 +6841,43 @@ EOF
 
 
 
+# 下载最新脚本替换 ~/nimbus.sh，保留本机线路模式（canshu）。成功后 NB_SELF_UPDATE_INFO 为“版本 模式”
+nb_self_update() {
+	local mode="$canshu" base="raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh" tmp url urls
+	# 尚未设置模式时检测一次：国内 IP → CN；只有 IPv6 出口（无 IPv4 默认路由）→ V6；双栈/纯 IPv4 保持直连
+	if [ "$mode" = "default" ]; then
+		if [ "$(curl -s -m 5 ipinfo.io/country 2>/dev/null)" = "CN" ]; then
+			mode="CN"
+		elif [ -z "$(ip -4 route show default 2>/dev/null)" ] && [ -n "$(ip -6 route show default 2>/dev/null)" ]; then
+			mode="V6"
+		fi
+	fi
+	if [ "$mode" = "default" ]; then
+		urls="https://$base ${gh_proxy_mirror}https://$base"
+	else
+		urls="${gh_proxy_mirror}https://$base https://$base"
+	fi
+
+	tmp=$(mktemp ~/nimbus_tmp.XXXXXX) || return 1
+	for url in $urls; do
+		if curl -fsSL --connect-timeout 8 -m 60 -o "$tmp" "$url" 2>/dev/null && head -1 "$tmp" | grep -q '^#!/bin/bash' && grep -q '^sh_v=' "$tmp" && grep -q '^canshu="default"' "$tmp"; then
+			# 直连失败、靠镜像才下载成功：切换为 CN 模式
+			[ "$mode" = "default" ] && [ "$url" != "https://$base" ] && mode="CN"
+			sed -i "s/^canshu=\"default\"/canshu=\"$mode\"/" "$tmp"
+			chmod 755 "$tmp"
+			cp -f ~/nimbus.sh ~/nimbus.sh.bak 2>/dev/null
+			mv -f "$tmp" ~/nimbus.sh || break
+			if nb_atomic_copy ~/nimbus.sh /usr/local/bin/nb; then
+				[ "$(readlink -f /usr/bin/nb 2>/dev/null)" = /usr/local/bin/nb ] || ln -sf /usr/local/bin/nb /usr/bin/nb 2>/dev/null
+			fi
+			NB_SELF_UPDATE_INFO="$(grep -m1 '^sh_v=' ~/nimbus.sh | cut -d '"' -f 2) $mode"
+			return 0
+		fi
+	done
+	rm -f "$tmp"
+	return 1
+}
+
 nimbus_update() {
 
 cd ~
@@ -6866,32 +6919,10 @@ while true; do
 	case "$choice" in
 		1)
 			clear
-			local country=$(curl -s --max-time 5 ipinfo.io/country)
-			local download_url
-			download_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh"
-
-			# 备份当前脚本
-			cp -f ~/nimbus.sh ~/nimbus.sh.bak 2>/dev/null
-
-			# 下载到临时文件，校验后再替换
-			local tmp_file=$(mktemp ~/nimbus_tmp.XXXXXX)
-			if curl -sS --max-time 60 --fail -o "$tmp_file" "$download_url" && \
-			   [ -s "$tmp_file" ] && \
-			   head -1 "$tmp_file" | grep -q '^#!/bin/bash'; then
-				chmod +x "$tmp_file"
-				mv -f "$tmp_file" ~/nimbus.sh
-				[ "$country" = "CN" ] && sed -i 's/^canshu="default"/canshu="CN"/' ~/nimbus.sh
-				canshu_v6
-				cp -f ~/nimbus.sh /usr/local/bin/nb > /dev/null 2>&1
-				ln -sf /usr/local/bin/nb /usr/bin/nb > /dev/null 2>&1
-				echo -e "${gl_lv}脚本已更新到最新版本！${gl_huang}v$sh_v_new${gl_bai}"
+			if nb_self_update; then
+				echo -e "${gl_lv}脚本已更新到最新版本！${gl_huang}v${NB_SELF_UPDATE_INFO% *}${gl_bai}（线路模式: ${NB_SELF_UPDATE_INFO#* }）"
 			else
-				rm -f "$tmp_file"
-				# 恢复备份
-				if [ -f ~/nimbus.sh.bak ]; then
-					mv -f ~/nimbus.sh.bak ~/nimbus.sh
-				fi
-				echo -e "${gl_hong}更新失败！下载出错或文件校验不通过，已恢复原版本${gl_bai}"
+				echo -e "${gl_hong}更新失败！下载出错或文件校验不通过，未做修改${gl_bai}"
 			fi
 			break_end
 			~/nimbus.sh
@@ -6899,34 +6930,9 @@ while true; do
 			;;
 		2)
 			clear
-			local country=$(curl -s --max-time 5 ipinfo.io/country)
-			local ipv6_address=$(curl -s --max-time 1 ipv6.ip.sb)
-			local cron_proxy cron_sed_cmd
-			if [ "$country" = "CN" ]; then
-				cron_proxy="$gh_proxy_mirror"
-				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"CN\"/g' ~/nimbus.sh"
-			elif [ -n "$ipv6_address" ]; then
-				cron_proxy="$gh_proxy_mirror"
-				cron_sed_cmd="sed -i 's/canshu=\"default\"/canshu=\"V6\"/g' ~/nimbus.sh"
-			else
-				cron_proxy="https://"
-				cron_sed_cmd=""
-			fi
-
-			# 构建健壮的自动更新命令：下载到临时文件 → 校验 → 备份 → 替换 → 恢复本地设置 → 部署
-			SH_Update_task="cd ~ && tmp=\$(mktemp ~/nimbus_tmp.XXXXXX) && curl -sS --max-time 60 --fail -o \"\$tmp\" ${cron_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh && [ -s \"\$tmp\" ] && head -1 \"\$tmp\" | grep -q '^#!/bin/bash' && cp -f ~/nimbus.sh ~/nimbus.sh.bak 2>/dev/null && chmod +x \"\$tmp\" && mv -f \"\$tmp\" ~/nimbus.sh"
-			# 追加设置恢复
-			if [ -n "$cron_sed_cmd" ]; then
-				SH_Update_task="$SH_Update_task && $cron_sed_cmd"
-			fi
-			# 部署到 /usr/local/bin/nb 和 /usr/bin/nb
-			SH_Update_task="$SH_Update_task; cp -f ~/nimbus.sh /usr/local/bin/nb 2>/dev/null; ln -sf /usr/local/bin/nb /usr/bin/nb 2>/dev/null"
-			# 下载失败时清理临时文件
-			SH_Update_task="$SH_Update_task || rm -f \"\$tmp\" 2>/dev/null"
-
+			# 定时执行 nb self-update：与“现在更新”同一逻辑，保留本机线路模式
 			check_crontab_installed
-			(crontab -l | grep -v "nimbus.sh") | crontab -
-			(crontab -l 2>/dev/null; echo "$(shuf -i 0-59 -n 1) 2 * * * bash -c '$SH_Update_task'") | crontab -
+			(crontab -l 2>/dev/null | grep -v "nimbus.sh"; nb_update_cron_line "$(shuf -i 0-59 -n 1)") | crontab -
 			echo -e "${gl_lv}自动更新已开启，每天凌晨2点脚本会自动更新！${gl_bai}"
 			break_end
 			;;
@@ -7003,6 +7009,7 @@ echo "以下是 nb 命令参考用例："
 echo "启动脚本            nb"
 echo "新机开荒            nb init | nb 开荒"
 echo "自动安装安全更新    nb secupdate | nb 安全更新"
+echo "更新 Nimbus 脚本    nb self-update"
 echo "安装软件包          nb install nano wget | nb add nano wget | nb 安装 nano wget"
 echo "卸载软件包          nb remove nano wget | nb del nano wget | nb uninstall nano wget | nb 卸载 nano wget"
 echo "更新系统            nb update | nb 更新"
@@ -7065,6 +7072,14 @@ else
 			;;
 		secupdate|安全更新)
 			nb_security_updates
+			;;
+		self-update|selfupdate)
+			if nb_self_update; then
+				echo "Nimbus 已更新到 v${NB_SELF_UPDATE_INFO% *}（线路模式: ${NB_SELF_UPDATE_INFO#* }）"
+			else
+				echo "Nimbus 更新失败：下载出错或文件校验不通过，未做修改" >&2
+				exit 1
+			fi
 			;;
 		bbr3|bbrv3)
 			bbrv3
