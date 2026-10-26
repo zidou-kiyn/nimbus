@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.4"
+sh_v="1.2.5"
 
 
 gl_hui='\e[37m'
@@ -743,17 +743,23 @@ ip6tables_available() {
 	command -v ip6tables >/dev/null 2>&1 && ip6tables -L >/dev/null 2>&1
 }
 
+# 去掉 fail2ban 的链（f2b-*）：它们由 fail2ban 自己维护，存进去开机恢复后，
+# 当时被封的 IP 会变成永久封禁（fail2ban 不知道这些规则，也不会解封）
+nb_strip_f2b_rules() {
+	grep -vE '^:f2b-|^-A f2b-|-j f2b-'
+}
+
 save_iptables_rules() {
 	mkdir -p /etc/iptables
-	local rules_temp rules6_temp
+	local rules_temp rules6_temp out
 	rules_temp=$(mktemp /etc/iptables/.rules.v4.XXXXXX) || return 1
 	ip6tables_available && rules6_temp=$(mktemp /etc/iptables/.rules.v6.XXXXXX)
-	if ! iptables-save > "$rules_temp" || ! mv -f -- "$rules_temp" /etc/iptables/rules.v4; then
+	if ! out=$(iptables-save) || ! printf '%s\n' "$out" | nb_strip_f2b_rules > "$rules_temp" || ! mv -f -- "$rules_temp" /etc/iptables/rules.v4; then
 		rm -f -- "$rules_temp" "$rules6_temp"
 		return 1
 	fi
 	if [ -n "${rules6_temp:-}" ]; then
-		if ! ip6tables-save > "$rules6_temp" || ! mv -f -- "$rules6_temp" /etc/iptables/rules.v6; then
+		if ! out=$(ip6tables-save) || ! printf '%s\n' "$out" | nb_strip_f2b_rules > "$rules6_temp" || ! mv -f -- "$rules6_temp" /etc/iptables/rules.v6; then
 			rm -f -- "$rules6_temp"
 			return 1
 		fi
@@ -1156,19 +1162,19 @@ iptables_panel() {
 				  read -e -p "请输入清除的IP: " d_ip
 				  iptables -D INPUT -s $d_ip -j ACCEPT 2>/dev/null
 				  iptables -D INPUT -s $d_ip -j DROP 2>/dev/null
-				  iptables-save > /etc/iptables/rules.v4
+				  save_iptables_rules
 				  ;;
 			  11)
 				  # 允许 PING
 				  iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT
 				  iptables -A OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT
-				  iptables-save > /etc/iptables/rules.v4
+				  save_iptables_rules
 				  ;;
 			  12)
 				  # 禁用 PING
 				  iptables -D INPUT -p icmp --icmp-type echo-request -j ACCEPT 2>/dev/null
 				  iptables -D OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT 2>/dev/null
-				  iptables-save > /etc/iptables/rules.v4
+				  save_iptables_rules
 				  ;;
 			  13)
 				  enable_ddos_defense
@@ -1957,9 +1963,33 @@ done
 
 
 
+# 重启 SSH 服务，返回值代表是否成功
+# - Ubuntu 22.10+ 默认由 ssh.socket 监听端口：需 daemon-reload 让生成器按 sshd_config 重新生成监听地址，
+#   再重启 ssh.socket 与 ssh.service（已有会话不会断开，ssh.service 为 KillMode=process）
+# - Debian/Ubuntu 的服务名是 ssh，RHEL/Fedora 是 sshd，Alpine 用 OpenRC
 restart_ssh() {
-	restart sshd ssh > /dev/null 2>&1
-
+	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+		if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+			systemctl daemon-reload || return 1
+			systemctl restart ssh.socket || return 1
+			systemctl restart ssh.service >/dev/null 2>&1 || true
+			return 0
+		fi
+		local unit
+		for unit in ssh sshd; do
+			if systemctl cat "$unit.service" >/dev/null 2>&1; then
+				systemctl restart "$unit.service"
+				return $?
+			fi
+		done
+		return 1
+	elif command -v rc-service >/dev/null 2>&1; then
+		rc-service sshd restart >/dev/null 2>&1
+	elif command -v service >/dev/null 2>&1; then
+		service ssh restart >/dev/null 2>&1 || service sshd restart >/dev/null 2>&1
+	else
+		return 1
+	fi
 }
 
 
@@ -2007,7 +2037,13 @@ nb_nft_custom_tables() {
 
 new_ssh_port() {
 
-  local new_port=$1
+  local new_port=$1 sshd_bin out rc
+
+  # 先放行新端口，再改配置、重启 sshd：防火墙放行失败时 sshd_config 保持原样
+  open_port "$new_port" || return 1
+  # 不再卸载 firewalld：RHEL 系上 dnf remove firewalld 会连带卸掉 fail2ban；改为在 firewalld 里放行新端口
+  nb_firewalld_allow_port "$new_port" || return 1
+  remove iptables-persistent ufw iptables-services > /dev/null 2>&1
 
   cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 
@@ -2016,15 +2052,29 @@ new_ssh_port() {
 
   correct_ssh_config
 
+  # 配置有误时还原，避免重启后 sshd 起不来
+  sshd_bin=$(command -v sshd 2>/dev/null || echo /usr/sbin/sshd)
+  if [ -x "$sshd_bin" ] && ! out=$("$sshd_bin" -t 2>&1) && ! echo "$out" | grep -qi 'privilege separation'; then
+    cp /etc/ssh/sshd_config.bak /etc/ssh/sshd_config
+    echo "sshd 配置检查失败，已还原 /etc/ssh/sshd_config："
+    echo "$out"
+    return 1
+  fi
+
   restart_ssh
-  local rc=$?
+  rc=$?
   # 无论重启是否成功，sshd_config 已改，先同步 fail2ban
   f2b_sync_ssh_port
-  [ $rc -eq 0 ] || return 1
-  open_port "$new_port" || return 1
-  # 不再卸载 firewalld：RHEL 系上 dnf remove firewalld 会连带卸掉 fail2ban；改为在 firewalld 里放行新端口
-  nb_firewalld_allow_port "$new_port" || return 1
-  remove iptables-persistent ufw iptables-services > /dev/null 2>&1
+  if [ $rc -ne 0 ]; then
+    echo -e "${gl_hong}重启 SSH 服务失败${gl_bai}，请保持当前会话，检查 systemctl status ssh / sshd"
+    return 1
+  fi
+
+  sleep 1
+  if command -v ss >/dev/null 2>&1 && ! ss -Htln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${new_port}\$"; then
+    echo -e "${gl_hong}未检测到端口 $new_port 在监听${gl_bai}，请保持当前会话，检查 systemctl status ssh / sshd"
+    return 1
+  fi
 
   echo "SSH 端口已修改为: $new_port"
   local nft_tables

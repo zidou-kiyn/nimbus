@@ -71,3 +71,11 @@ tmux 推荐配置优化（Termius 手机/电脑 + tmux 内运行 pi）。
 9.同步后核对 fail2ban 实际生效的端口；若被其他 jail.d/*.local 覆盖，会列出这些文件提示修改。
 10.检测到自定义 nftables 规则时，改端口后提示在自己的 nftables 规则中放行新端口（nimbus 只操作 iptables / firewalld，不改 nftables 配置）。
 ------------------------
+2026-10-27   v1.2.5
+修复修改 SSH 端口的几个可靠性问题，防火墙规则不再保存 fail2ban 的封禁。
+1.Ubuntu 22.10+（ssh.socket 监听端口）改端口后实际仍在旧端口监听：现在会 daemon-reload 并重启 ssh.socket 与 ssh.service，已有会话不受影响。
+2.重启 SSH 服务按实际服务名处理（Debian/Ubuntu 为 ssh，RHEL 系为 sshd），Alpine 改用 rc-service；失败时如实返回，不再一律当作成功。
+3.修改 SSH 端口改为先放行防火墙、再改配置并重启：放行失败时 sshd_config 保持原样；改完先用 sshd -t 检查，配置有误自动还原；重启后检查新端口确实在监听，否则提示保持当前会话排查。
+4.保存 iptables 规则时去掉 fail2ban 的 f2b-* 链：之前会把当时被封的 IP 一起存进 rules.v4，开机恢复后变成永久封禁，fail2ban 也不会解封。
+5.防火墙菜单的清除 IP、允许 / 禁用 PING 改用统一的保存逻辑（同时保存 IPv6 规则与开机恢复任务）。
+------------------------
