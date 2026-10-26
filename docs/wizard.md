@@ -35,7 +35,7 @@ nb init        # 或：nb → 9
 | | 10 | 优化 DNS | |
 | | 11 | 自动安装安全更新 | 仅 Debian / Ubuntu，其他系统显示「不适用」 |
 | 四 · SSH 与账号安全 | 12 | SSH 密钥登录 | 导入公钥后禁用密码登录 |
-| | 13 | 修改 SSH 端口 | 同步 fail2ban 的端口 |
+| | 13 | 修改 SSH 端口 | 同步 fail2ban 的端口；firewalld 运行中时自动放行新端口 |
 | | 14 | 新建 sudo 用户并禁用 root（可选） | |
 | | 15 | fail2ban SSH 防御 | |
 | 五 · 环境与监控 | 16 | tmux 及推荐配置 | |

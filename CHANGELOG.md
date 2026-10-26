@@ -58,3 +58,16 @@ tmux 推荐配置优化（Termius 手机/电脑 + tmux 内运行 pi）。
 3.IPv6 模式只用于纯 IPv6 机器（没有 IPv4 默认路由），双栈机器保持直连 GitHub。
 4.旧版定时任务在下次运行 nb 时自动迁移为 nb self-update，执行时间不变。
 ------------------------
+2026-10-27   v1.2.4
+修复修改 SSH 端口后 fail2ban 仍只拦截 22 端口。
+1.Alpine：jail 名本来就是 sshd / sshd-ddos（alpine-sshd 只是过滤器名），旧版却把端口写进不存在的 [alpine-sshd]，真正生效的 jail 仍是 port = ssh；旧配置会自动迁移，原有 bantime 等参数保留。
+2.端口改为同步到 fail2ban 实际加载的所有 SSH jail（sshd、sshd-ddos 等），不再按系统猜测 jail 名；查看拦截记录、基础参数配置同样按实际 jail 名处理。
+3.SSH 端口检测更可靠：sshd -T 失败时（Debian/Ubuntu 缺少 /run/sshd）会解析 sshd_config 及 sshd_config.d/*.conf，并合并 sshd 实际监听的端口（如 Ubuntu ssh.socket 未切换到新端口时，新旧端口都会保护）。
+4.同步时机：修改 SSH 端口时即使重启 sshd 失败也会同步；进入 fail2ban 面板、编辑配置后会自动检查（端口没变化时不会输出提示，也不会 reload），手动改端口或装 fail2ban 之前就改过端口的机器也能对齐。
+5.基础参数配置只在 Debian/Ubuntu 上补 logpath = /var/log/auth.log，CentOS 系不再写入不存在的日志路径。
+6.修改 SSH 端口不再卸载 firewalld：RHEL 系上 dnf remove firewalld 会连带卸掉整个 fail2ban。firewalld 运行中时改为用 firewall-cmd 放行新端口；没运行时只写入它的永久配置，避免开机自启后拦截新端口。
+7.CentOS 系安装 fail2ban 时若连带装上了 firewalld（原本没有、也没运行），会取消它的开机自启：它默认只放行 22，重启后会让改过端口的 SSH 连不上。
+8.封禁动作按本机实际可用的防火墙选择：当前动作无法执行时（firewalld 没运行、只有 nftables 没有 iptables），自动改用 firewallcmd / nftables / iptables 中可用的一个；原本能用的配置（如 Debian 13 默认的 nftables）不改动。修复前这类机器上 fail2ban 只记日志，实际不会拦截。
+9.同步后核对 fail2ban 实际生效的端口；若被其他 jail.d/*.local 覆盖，会列出这些文件提示修改。
+10.检测到自定义 nftables 规则时，改端口后提示在自己的 nftables 规则中放行新端口（nimbus 只操作 iptables / firewalld，不改 nftables 配置）。
+------------------------

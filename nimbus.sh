@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.3"
+sh_v="1.2.4"
 
 
 gl_hui='\e[37m'
@@ -1381,31 +1381,175 @@ check_f2b_status() {
 	fi
 }
 
-# 把 sshd 实际监听的端口同步到 fail2ban 的 sshd jail（默认 port = ssh 只对 22 端口生效）
+# sshd 的端口列表（逗号分隔）：配置中的 Port/ListenAddress ∪ sshd 进程实际监听的端口
+# - sshd -T 在 Debian/Ubuntu 缺少 /run/sshd 时会失败，回退为直接解析 sshd_config 及 sshd_config.d/*.conf
+# - 合并实际监听端口：Ubuntu ssh.socket 等改了配置却仍在旧端口监听的情况也能覆盖
+nb_ssh_ports() {
+	local sshd_bin ports
+	sshd_bin=$(command -v sshd 2>/dev/null || echo /usr/sbin/sshd)
+	ports=$(
+		{
+			if [ -x "$sshd_bin" ] && "$sshd_bin" -T >/dev/null 2>&1; then
+				"$sshd_bin" -T 2>/dev/null | awk '$1=="port"{print $2} $1=="listenaddress" && match($2,/:[0-9]+$/){print substr($2,RSTART+1)}'
+			else
+				cat /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null | awk 'tolower($1)=="port"{print $2}'
+			fi
+			ss -Htlnp 2>/dev/null | awk '/"sshd"/{n=split($4,a,":"); print a[n]}'
+		} | grep -E '^[0-9]+$' | sort -un | paste -sd, -
+	)
+	echo "${ports:-22}"
+}
+
+# fail2ban 中所有已启用、与 SSH 相关的 jail（Debian/CentOS: sshd；Alpine: sshd + sshd-ddos）
+f2b_ssh_jails() {
+	fail2ban-client -d 2>/dev/null | sed -n "s/^\['add', '\([^']*\)'.*/\1/p" | grep -i ssh | sort -u
+}
+
+# 主 SSH jail 名称（查看状态、写基础参数用）
+f2b_ssh_jail() {
+	local jails
+	jails=$(f2b_ssh_jails)
+	if [ -z "$jails" ] || echo "$jails" | grep -qx sshd; then
+		echo sshd
+	else
+		echo "$jails" | head -n1
+	fi
+}
+
+# 在 ini 文件的 [section] 中设置 key = value（没有该段则追加到末尾）
+f2b_ini_set() {
+	local file=$1 section=$2 key=$3 value=$4
+	awk -v s="[$section]" -v k="$key" -v v="$value" '
+		function emit() { if (insec && !done) { print k " = " v; done = 1 } }
+		/^[[:space:]]*\[/ { t = $0; gsub(/[[:space:]]/, "", t); emit(); insec = (t == s); if (insec) found = 1; print; next }
+		insec && $0 ~ ("^[[:space:]]*" k "[[:space:]]*=") { if (!done) { print k " = " v; done = 1 }; next }
+		{ print }
+		END { emit(); if (!found) { print ""; print s; print k " = " v } }
+	' "$file" > "$file.nbtmp" && cat "$file.nbtmp" > "$file"
+	rm -f "$file.nbtmp"
+}
+
+nb_firewalld_running() {
+	command -v firewall-cmd >/dev/null 2>&1 && [ "$(firewall-cmd --state 2>/dev/null)" = "running" ]
+}
+
+# 某个封禁动作在本机能否真正执行（防火墙不可用时 fail2ban 只记日志、不会真的拦截）
+f2b_action_usable() {
+	case "$1" in
+		firewallcmd*) nb_firewalld_running ;;
+		nftables*) command -v nft >/dev/null 2>&1 ;;
+		iptables*) command -v iptables >/dev/null 2>&1 ;;
+		*) return 0 ;;
+	esac
+}
+
+# 按本机实际在用的防火墙选封禁动作：firewalld 运行中 > nftables > iptables
+f2b_pick_banaction() {
+	if nb_firewalld_running; then
+		echo firewallcmd-rich-rules
+	elif command -v nft >/dev/null 2>&1; then
+		if [ -f /etc/fail2ban/action.d/nftables.conf ]; then echo nftables; else echo nftables-multiport; fi
+	elif command -v iptables >/dev/null 2>&1; then
+		echo iptables-multiport
+	fi
+}
+
+# 把 sshd 实际使用的端口同步到 fail2ban 所有 SSH jail（默认 port = ssh 只对 22 端口生效），
+# 并在当前封禁动作无法执行时（如 firewalld 没运行、只有 nftables 没有 iptables）换成本机可用的动作
+# 用法：f2b_sync_ssh_port [quiet]   quiet：没有变化时不输出
 f2b_sync_ssh_port() {
 	command -v fail2ban-client >/dev/null 2>&1 || return 0
-	local conf="/etc/fail2ban/jail.d/sshd.local" ports jail="sshd"
-	ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | sort -un | paste -sd, -)
-	[ -n "$ports" ] || ports=$(grep -E '^[[:space:]]*Port[[:space:]]+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | sort -un | paste -sd, -)
-	[ -n "$ports" ] || ports=22
+	[ -d /etc/fail2ban ] || return 0
+	local quiet=$1 conf="/etc/fail2ban/jail.d/sshd.local" ports jails j a tmp dump enable= ban_new= ban_fix=
+	# 迁移旧版本的错误配置：Alpine 的 jail 名是 sshd（alpine-sshd 只是过滤器名），旧版写成 [alpine-sshd] 导致端口不生效
+	if grep -qs '^\[alpine-sshd\]' "$conf" && ! grep -qs '^\[alpine-sshd\]' /etc/fail2ban/jail.conf /etc/fail2ban/jail.local /etc/fail2ban/jail.d/*.conf; then
+		if grep -qs '^\[sshd\]' "$conf"; then
+			awk '/^\[/{skip=($0=="[alpine-sshd]")} !skip' "$conf" > "$conf.nbtmp" && cat "$conf.nbtmp" > "$conf"
+			rm -f "$conf.nbtmp"
+		else
+			sed -i 's/^\[alpine-sshd\]/[sshd]/' "$conf"
+		fi
+	fi
+	ports=$(nb_ssh_ports)
+	dump=$(fail2ban-client -d 2>/dev/null)
+	jails=$(echo "$dump" | sed -n "s/^\['add', '\([^']*\)'.*/\1/p" | grep -i ssh | sort -u)
+	if [ -z "$jails" ]; then
+		jails=sshd
+		[ -f "$conf" ] || enable=1
+	fi
 	mkdir -p /etc/fail2ban/jail.d
-	if [ ! -f "$conf" ]; then
-		grep -qi 'Alpine' /etc/issue 2>/dev/null && [ -f /etc/fail2ban/filter.d/alpine-sshd.conf ] && jail="alpine-sshd"
-		printf '[%s]\n# Managed by nimbus\nenabled = true\n' "$jail" > "$conf"
-	fi
-	if grep -qE '^[[:space:]]*port[[:space:]]*=' "$conf"; then
-		sed -i -E "s/^[[:space:]]*port[[:space:]]*=.*/port = ${ports}/" "$conf"
+	tmp=$(mktemp) || return 1
+	if [ -f "$conf" ]; then
+		cat "$conf" > "$tmp"
 	else
-		sed -i "0,/^\[.*\]/ s//&\nport = ${ports}/" "$conf"
+		echo "# Managed by nimbus：SSH 端口、封禁动作由 nimbus 自动同步" > "$tmp"
 	fi
+	for j in $jails; do
+		f2b_ini_set "$tmp" "$j" port "$ports"
+		[ -n "$enable" ] && f2b_ini_set "$tmp" "$j" enabled true
+		# 只在当前动作用不了时才改，能用的配置（如 Debian 13 默认的 nftables）保持不动
+		for a in $(echo "$dump" | sed -n "s/^\['set', '$j', 'addaction', '\([^'\[]*\).*/\1/p"); do
+			f2b_action_usable "$a" && continue
+			[ -n "$ban_new" ] || ban_new=$(f2b_pick_banaction)
+			if [ -n "$ban_new" ]; then
+				f2b_ini_set "$tmp" "$j" banaction "$ban_new"
+				ban_fix="$a -> $ban_new"
+			else
+				ban_fix="$a"
+			fi
+			break
+		done
+	done
+	if [ -f "$conf" ] && cmp -s "$tmp" "$conf"; then
+		rm -f "$tmp"
+		[ "$quiet" = quiet ] || echo -e "fail2ban SSH 端口已是最新: ${gl_huang}${ports}${gl_bai}"
+		[ -n "$ban_fix" ] && [ -z "$ban_new" ] && echo -e "${gl_hong}注意：${gl_bai}fail2ban 的封禁动作 $ban_fix 在本机无法执行，且没有找到 nft / iptables，实际不会拦截任何 IP"
+		f2b_check_effective_port "$dump" "$ports" $jails
+		return 0
+	fi
+	cat "$tmp" > "$conf"
+	rm -f "$tmp"
+	chmod 644 "$conf"
 	fail2ban-client reload >/dev/null 2>&1 || true
-	echo -e "fail2ban 已同步 SSH 端口: ${gl_huang}${ports}${gl_bai}"
+	echo -e "fail2ban 已同步 SSH 端口: ${gl_huang}${ports}${gl_bai}（jail: $(echo $jails | tr ' ' ',')）"
+	if [ -n "$ban_fix" ]; then
+		if [ -n "$ban_new" ]; then
+			echo -e "fail2ban 原封禁动作在本机无法执行，已改为: ${gl_huang}${ban_fix}${gl_bai}"
+		else
+			echo -e "${gl_hong}注意：${gl_bai}fail2ban 的封禁动作 $ban_fix 在本机无法执行，且没有找到 nft / iptables，实际不会拦截任何 IP"
+		fi
+	fi
+	f2b_check_effective_port "$(fail2ban-client -d 2>/dev/null)" "$ports" $jails
+}
+
+# 核对 fail2ban 实际生效的端口：排在 sshd.local 之后的 jail.d/*.local 若也写了 port，会覆盖 nimbus 的设置
+# 用法：f2b_check_effective_port "<fail2ban-client -d 输出>" <端口> <jail...>
+f2b_check_effective_port() {
+	local dump=$1 ports=$2 j eff bad= conf="/etc/fail2ban/jail.d/sshd.local"
+	shift 2
+	for j in "$@"; do
+		eff=$(echo "$dump" | grep -F "['multi-set', '$j', 'action'," | grep -oE "\['port', '[^']*'\]" | head -n1 | cut -d"'" -f4)
+		[ -n "$eff" ] && [ "$eff" != "$ports" ] && bad="$bad $j=$eff"
+	done
+	[ -n "$bad" ] || return 0
+	echo -e "${gl_hong}注意：${gl_bai}fail2ban 实际生效的端口与 SSH 不一致:${bad}（SSH: $ports）"
+	echo "以下文件也设置了 port 并覆盖了 $conf，请删除其中的 port 行或改成 $ports："
+	grep -lE '^[[:space:]]*port[[:space:]]*=' /etc/fail2ban/jail.d/*.local 2>/dev/null | grep -vxF "$conf" | sed 's/^/  /'
+	return 1
 }
 
 f2b_install_sshd() {
 
 	docker rm -f fail2ban >/dev/null 2>&1
+	local had_firewalld=
+	command -v firewall-cmd >/dev/null 2>&1 && had_firewalld=1
 	install fail2ban || return 1
+	# RHEL 系的 fail2ban 依赖 fail2ban-firewalld，会连带装上 firewalld 并设为开机自启；
+	# 它本来不是这台机器的防火墙，重启后却会按默认规则只放行 22，导致改过端口的 SSH 连不上
+	if [ -z "$had_firewalld" ] && command -v firewall-cmd >/dev/null 2>&1 && ! nb_firewalld_running; then
+		systemctl disable firewalld >/dev/null 2>&1 || true
+		echo "安装 fail2ban 时连带装上了 firewalld（未运行），已取消其开机自启；封禁改用 nftables / iptables"
+	fi
 
 	if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
 		install rsyslog || return 1
@@ -1452,19 +1596,18 @@ f2b_install_sshd() {
 
 
 f2b_sshd() {
-	if grep -q 'Alpine' /etc/issue; then
-		xxx=alpine-sshd
+	local j
+	for j in $(f2b_ssh_jails); do
+		xxx=$j
 		f2b_status_xxx
-	else
-		xxx=sshd
-		f2b_status_xxx
-	fi
+	done
+	[ -n "$j" ] || { xxx=sshd; f2b_status_xxx; }
 }
 
 # 基础参数配置：封禁时长(bantime)、时间窗口(findtime)、重试次数(maxretry)
 # 说明：
 # - 优先写入 /etc/fail2ban/jail.d/sshd.local（覆盖默认 jail 配置，升级不易丢）
-# - 若是 Alpine 且 jail 名称不同，依然写 sshd.local；Fail2Ban 会按 jail 名称匹配
+# - jail 名称按实际加载的配置取（Alpine 也是 sshd，过滤器才叫 alpine-sshd）
 f2b_basic_config() {
 	root_use
 	install nano
@@ -1474,13 +1617,8 @@ f2b_basic_config() {
 		return
 	fi
 
-	local jail_name="sshd"
-	if grep -qi 'Alpine' /etc/issue 2>/dev/null; then
-		# Alpine 默认 jail 通常为 sshd；仅当检测到自定义 alpine-sshd 规则时才切换
-		if [ -f /etc/fail2ban/filter.d/alpine-sshd.conf ] || [ -f /etc/fail2ban/jail.d/alpine-ssh.conf ] || [ -f /etc/fail2ban/jail.d/alpine-sshd.local ]; then
-			jail_name="alpine-sshd"
-		fi
-	fi
+	local jail_name
+	jail_name=$(f2b_ssh_jail)
 
 	echo "即将配置 SSH jail：$jail_name"
 	read -e -p "封禁时长 bantime (秒/分钟/小时，如 3600 或 1h) [默认 1h]: " bantime
@@ -1504,7 +1642,7 @@ EOF
 
 	# Ensure a logfile exists for sshd jail on Debian/Ubuntu minimal images
 	# (without it, fail2ban-server may refuse to start)
-	if [ "$jail_name" = "sshd" ]; then
+	if [ "$jail_name" = "sshd" ] && command -v apt >/dev/null 2>&1; then
 		if [ -f /etc/fail2ban/jail.d/sshd.local ]; then
 			grep -qE '^\s*logpath\s*=' /etc/fail2ban/jail.d/sshd.local || echo 'logpath = /var/log/auth.log' >> /etc/fail2ban/jail.d/sshd.local
 		fi
@@ -1530,10 +1668,12 @@ f2b_edit_config() {
 
 	mkdir -p /etc/fail2ban/jail.d
 	local cfg="/etc/fail2ban/jail.d/sshd.local"
-	[ -f "$cfg" ] || printf "[sshd]\n# bantime/findtime/maxretry\n" > "$cfg"
+	[ -f "$cfg" ] || printf "[%s]\n# bantime/findtime/maxretry\n" "$(f2b_ssh_jail)" > "$cfg"
 
 	nano "$cfg"
 	echo -e "${gl_lv}已保存${gl_bai}，正在 reload fail2ban..."
+	# port 以 sshd 实际端口为准，手动改错也会被纠正
+	f2b_sync_ssh_port quiet
 	fail2ban-client reload >/dev/null 2>&1 || true
 }
 
@@ -1844,6 +1984,27 @@ correct_ssh_config() {
 }
 
 
+# 在 firewalld 中放行端口（运行中：立即生效并写入永久配置；未运行：只写永久配置，防止开机自启后拦截新端口）
+nb_firewalld_allow_port() {
+	local port=$1
+	command -v firewall-cmd >/dev/null 2>&1 || return 0
+	if nb_firewalld_running; then
+		firewall-cmd --permanent --add-port="$port/tcp" >/dev/null || return 1
+		firewall-cmd --reload >/dev/null || return 1
+		echo "firewalld 已放行 TCP $port"
+	elif command -v firewall-offline-cmd >/dev/null 2>&1; then
+		firewall-offline-cmd --add-port="$port/tcp" >/dev/null 2>&1 && echo "firewalld 未运行，已在其永久配置中放行 TCP $port"
+	fi
+	return 0
+}
+
+# 本机自己维护的 nftables 表（排除 iptables-nft、fail2ban、Docker、firewalld 自动生成的表）
+nb_nft_custom_tables() {
+	command -v nft >/dev/null 2>&1 || return 0
+	nft list tables 2>/dev/null | awk '$1=="table"{print $2" "$3}' \
+		| grep -vE '^(ip|ip6|inet|arp|bridge) (filter|nat|mangle|raw|security)$|f2b-table|^inet firewalld$|docker'
+}
+
 new_ssh_port() {
 
   local new_port=$1
@@ -1855,11 +2016,24 @@ new_ssh_port() {
 
   correct_ssh_config
 
-  restart_ssh || return 1
+  restart_ssh
+  local rc=$?
+  # 无论重启是否成功，sshd_config 已改，先同步 fail2ban
+  f2b_sync_ssh_port
+  [ $rc -eq 0 ] || return 1
   open_port "$new_port" || return 1
-  remove iptables-persistent ufw firewalld iptables-services > /dev/null 2>&1
+  # 不再卸载 firewalld：RHEL 系上 dnf remove firewalld 会连带卸掉 fail2ban；改为在 firewalld 里放行新端口
+  nb_firewalld_allow_port "$new_port" || return 1
+  remove iptables-persistent ufw iptables-services > /dev/null 2>&1
 
   echo "SSH 端口已修改为: $new_port"
+  local nft_tables
+  nft_tables=$(nb_nft_custom_tables | paste -sd, -)
+  if [ -n "$nft_tables" ]; then
+    echo -e "${gl_huang}注意：${gl_bai}检测到自定义 nftables 规则（${nft_tables}）。"
+    echo "nimbus 只在 iptables / firewalld 中放行了 TCP $new_port，不会改你的 nftables 配置；"
+    echo "请确认这些规则也放行了新端口，否则用新端口可能连不上。"
+  fi
 
   sleep 1
 
@@ -4285,6 +4459,8 @@ switch_mirror() {
 
 fail2ban_panel() {
 		  root_use
+		  # SSH 端口可能在别处被改过（手动修改、安装 fail2ban 前已改），进入面板时自动对齐
+		  f2b_sync_ssh_port quiet
 		  while true; do
 
 				check_f2b_status
@@ -6037,7 +6213,6 @@ nb_ssh_port_menu() {
 		if [[ $new_port =~ ^[0-9]+$ ]]; then  # 检查输入是否为数字
 			if [[ $new_port -ge 1 && $new_port -le 65535 ]]; then
 				if new_ssh_port "$new_port"; then
-					f2b_sync_ssh_port
 					echo -e "${gl_huang}请保持当前会话，新开终端用端口 $new_port 测试登录成功后再断开${gl_bai}"
 					break
 				fi
