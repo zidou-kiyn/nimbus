@@ -99,3 +99,9 @@ XBoard-node 改用 Hei-XiaoHu/Xboard-Node。
 2.命令行美化改为写入 ~/.bashrc，并放在 ble.sh 的 attach 块之前（登录时不加载 .bashrc 的系统如 Alpine 仍写 ~/.profile），同时清理 ~/.profile 里旧的配置；~/.profile 中其他 PS1= 行（包括手写在 if 里的）改为注释掉的空操作 `: # [nimbus 已停用] …`，不会破坏 if 语法。
 3.安装 / 更新 ble.sh（系统工具 33 选 1、新机开荒、nb blesh）时，自动把 ~/.profile 里已有的美化配置挪到 ~/.bashrc。已受影响的机器：nb self-update 后重新执行一次命令行美化或 ble.sh 安装即可。
 ------------------------
+2026-10-28   v1.2.9
+重装系统适配无法访问境外的国内机器（如部分腾讯云锐驰型）。
+1.原来重装前要从 GitHub（国内走 ghfast 代理）下载 InstallNET.sh，机器完全没有国际出口时会下载失败，而 InstallNET 在 gitee 上的副本也已无法下载。
+2.现在打开重装菜单时先下载重装脚本：InstallNET 依次尝试直连和代理；都失败时自动改用 bin456789/reinstall 的国内镜像 cnb.cool，安装过程使用国内源，菜单顶部会提示当前使用的脚本。
+3.改用 reinstall 时系统选项、root 密码和 SSH 端口不变，Alpine 改为最新稳定版并可自定义密码；reinstall 不支持软 RAID，多硬盘时安装到当前系统所在硬盘。
+------------------------

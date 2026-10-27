@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.8-6366f1?style=flat-square" alt="version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.9-6366f1?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/shell-bash-38bdf8?style=flat-square&logo=gnubash&logoColor=white" alt="bash">
   <img src="https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20RHEL%20%7C%20Alpine-0ea5e9?style=flat-square&logo=linux&logoColor=white" alt="platform">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-64748b?style=flat-square" alt="license"></a>
@@ -46,7 +46,7 @@ bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/
 ## ✨ 特性
 
 - 🌱 **新机开荒**：23 步初始化按推荐顺序排好，实时检测状态、推荐下一步，可跳过或手动标记。[了解更多 →](docs/wizard.md)
-- 💿 **重装系统**：基于 InstallNET，可自定义系统版本、root 密码、SSH 端口，多硬盘时可选软 RAID。
+- 💿 **重装系统**：基于 InstallNET，可自定义系统版本、root 密码、SSH 端口，多硬盘时可选软 RAID；连不上 GitHub 的国内机器自动改用 bin456789/reinstall 国内镜像。
 - ⚡ **BBRv3**：XanMod LTS 内核 + BBRv3；PVE 宿主机、容器只开 BBR + fq，不动内核。
 - 🛡️ **安全加固**：密钥登录、改 SSH 端口、fail2ban、仅安全补丁的自动更新。
 - 📡 **监控与部署**：TG-bot 资源告警与 SSH 登录提醒，以及 Komari 探针、Realm 转发、XBoard-node 的安装。
@@ -54,7 +54,7 @@ bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/
 - 🐳 **日常运维**：Docker 管理、防火墙、虚拟内存、备份、测速与流媒体检测。
 
 ```text
-Nimbus · 云服务器工具箱 v1.2.8
+Nimbus · 云服务器工具箱 v1.2.9
 ------------------------
 1.   系统信息查询
 2.   系统更新

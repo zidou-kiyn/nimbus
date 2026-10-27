@@ -38,6 +38,8 @@
 
 基于 [leitbogioro/Tools InstallNET](https://github.com/leitbogioro/Tools)，使用各发行版的官方安装器。
 
+打开菜单时先下载重装脚本：InstallNET 依次尝试 GitHub 直连和代理；都失败时（如没有国际出口的国内机器）自动改用 [bin456789/reinstall](https://github.com/bin456789/reinstall) 的国内镜像 cnb.cool，安装过程使用国内源，菜单顶部会提示当前使用的脚本。
+
 | 项目 | 选项 |
 |---|---|
 | 系统 | Debian 13 ★ / 12、Ubuntu 24.04 / 22.04、AlmaLinux 9、Rocky 9、Alpine edge |
@@ -45,7 +47,8 @@
 | SSH 端口 | 自定义，默认 22 |
 | 软 RAID | 检测到 ≥ 2 块硬盘时可选 RAID 0 / 1 / 5 / 6 / 10（Debian / AlmaLinux / Rocky） |
 
-- Alpine 的 root 密码由 InstallNET 固定为 `LeitboGi0ro`，装好后请立即修改。
+- Alpine 的 root 密码由 InstallNET 固定为 `LeitboGi0ro`，装好后请立即修改。改用 reinstall 时 Alpine 装最新稳定版，可自定义密码。
+- reinstall 不支持软 RAID，多硬盘时安装到当前系统所在硬盘。
 - **OVH 独服**用软 RAID 时，请先在 OVH 面板用官方模板、默认分区装一次系统，再执行重装，否则可能无法引导。
 - 执行前会汇总所有参数，需要输入 `yes` 确认。重装会清空硬盘。
 

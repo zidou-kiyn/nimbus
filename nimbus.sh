@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.8"
+sh_v="1.2.9"
 
 
 gl_hui='\e[37m'
@@ -2393,49 +2393,95 @@ clear
 
 
 
+# 下载重装脚本：优先 InstallNET（GitHub，国内走代理）；GitHub 及代理都不通时（如国内无国际出口的机器）
+# 改用 bin456789/reinstall 的国内镜像 cnb.cool，它在国内会自动使用国内源。成功时设置 NB_DD_ENGINE / NB_DD_INSTALLER
+nb_dd_fetch_installer() {
+	local f
+	NB_DD_ENGINE="" NB_DD_INSTALLER=""
+	f=/root/InstallNET.sh
+	if nb_download raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh "$f" && head -1 "$f" | grep -q '^#!/'; then
+		NB_DD_ENGINE="installnet" NB_DD_INSTALLER="$f"
+		return 0
+	fi
+	rm -f "$f"
+	f=/root/reinstall.sh
+	if { curl -fsSL --connect-timeout 8 -m 120 -o "$f" "https://cnb.cool/bin456789/reinstall/-/git/raw/main/reinstall.sh" 2>/dev/null ||
+		nb_download raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh "$f"; } && head -1 "$f" | grep -q '^#!/'; then
+		NB_DD_ENGINE="reinstall" NB_DD_INSTALLER="$f"
+		return 0
+	fi
+	rm -f "$f"
+	return 1
+}
+
 dd_xitong() {
 	root_use
-	local choice sys ver label raid_ok pwd pwd2 port raid disks disk_list confirm
-	local installer="/root/InstallNET.sh"
+	local choice sys rsys ver rver label raid_ok pwd pwd2 port raid disks disk_list confirm engine installer name
 	local -a args
+
+	install curl wget
+	echo "正在下载重装脚本..."
+	if ! nb_dd_fetch_installer; then
+		echo -e "${gl_hong}重装脚本下载失败（GitHub、代理和国内镜像 cnb.cool 都无法访问），请检查网络后重试${gl_bai}"
+		break_end
+		return 1
+	fi
+	engine="$NB_DD_ENGINE" installer="$NB_DD_INSTALLER"
+	[ "$engine" = installnet ] && name="InstallNET" || name="reinstall"
 
 	while true; do
 		clear
 		echo "一键重装系统"
 		echo "------------------------------------------------"
-		echo "使用 InstallNET 通过官方网络安装器重装原版系统，可自定义 root 密码、SSH 端口和软 RAID"
+		if [ "$engine" = installnet ]; then
+			echo "使用 InstallNET 通过官方网络安装器重装原版系统，可自定义 root 密码、SSH 端口和软 RAID"
+		else
+			echo -e "${gl_huang}本机无法访问 GitHub，已改用 bin456789/reinstall（国内镜像 cnb.cool，安装时自动使用国内源）${gl_bai}"
+			echo "可自定义 root 密码和 SSH 端口，不支持软 RAID"
+		fi
 		echo -e "${gl_hong}注意: 将清空硬盘上的全部数据！${gl_bai}重装约需 10~30 分钟，期间无法连接，请提前备份"
-		echo -e "${gl_hui}脚本来源: https://github.com/leitbogioro/Tools${gl_bai}"
+		if [ "$engine" = installnet ]; then
+			echo -e "${gl_hui}脚本来源: https://github.com/leitbogioro/Tools${gl_bai}"
+		else
+			echo -e "${gl_hui}脚本来源: https://github.com/bin456789/reinstall${gl_bai}"
+		fi
 		echo "------------------------"
 		echo "1. Debian 13 ★                2. Debian 12"
 		echo "3. Ubuntu 24.04               4. Ubuntu 22.04"
 		echo "5. AlmaLinux 9                6. Rocky Linux 9"
-		echo "7. Alpine Linux (edge)"
+		if [ "$engine" = installnet ]; then
+			echo "7. Alpine Linux (edge)"
+		else
+			echo "7. Alpine Linux (最新稳定版)"
+		fi
 		echo "------------------------"
 		echo "0. 返回上一级选单"
 		echo "------------------------"
 		read -r -e -p "请选择要重装的系统: " choice
 		raid_ok=false
+		# sys/ver: InstallNET 参数；rsys/rver: reinstall 参数（rver 为空表示最新版）
 		case "$choice" in
-			1) sys="-debian"; ver="13"; label="Debian 13"; raid_ok=true ;;
-			2) sys="-debian"; ver="12"; label="Debian 12"; raid_ok=true ;;
-			3) sys="-ubuntu"; ver="24.04"; label="Ubuntu 24.04" ;;
-			4) sys="-ubuntu"; ver="22.04"; label="Ubuntu 22.04" ;;
-			5) sys="-almalinux"; ver="9"; label="AlmaLinux 9"; raid_ok=true ;;
-			6) sys="-rockylinux"; ver="9"; label="Rocky Linux 9"; raid_ok=true ;;
-			7) sys="-alpine"; ver="edge"; label="Alpine Linux edge" ;;
+			1) sys="-debian"; rsys="debian"; ver="13"; rver="13"; label="Debian 13"; raid_ok=true ;;
+			2) sys="-debian"; rsys="debian"; ver="12"; rver="12"; label="Debian 12"; raid_ok=true ;;
+			3) sys="-ubuntu"; rsys="ubuntu"; ver="24.04"; rver="24.04"; label="Ubuntu 24.04" ;;
+			4) sys="-ubuntu"; rsys="ubuntu"; ver="22.04"; rver="22.04"; label="Ubuntu 22.04" ;;
+			5) sys="-almalinux"; rsys="almalinux"; ver="9"; rver="9"; label="AlmaLinux 9"; raid_ok=true ;;
+			6) sys="-rockylinux"; rsys="rocky"; ver="9"; rver="9"; label="Rocky Linux 9"; raid_ok=true ;;
+			7) sys="-alpine"; rsys="alpine"; ver="edge"; rver=""; label="Alpine Linux edge"
+			   [ "$engine" = reinstall ] && label="Alpine Linux（最新稳定版）" ;;
 			0) return ;;
 			*) continue ;;
 		esac
 		break
 	done
+	[ "$engine" = reinstall ] && raid_ok=false
 
 	echo ""
 	echo -e "${gl_cyan}重装为 ${label}${gl_bai}"
 	echo "------------------------"
 
 	# root 密码（InstallNET 未对密码加引号，仅允许安全字符）
-	if [ "$sys" = "-alpine" ]; then
+	if [ "$engine" = installnet ] && [ "$sys" = "-alpine" ]; then
 		pwd="LeitboGi0ro"
 		echo -e "Alpine 不支持自定义密码，初始 root 密码固定为: ${gl_huang}${pwd}${gl_bai}"
 	else
@@ -2496,15 +2542,23 @@ dd_xitong() {
 			if [ -n "$raid" ]; then
 				echo -e "${gl_huang}OVH 独服提示: 请先在 OVH 面板用官方模板、默认分区方式安装一次系统，再执行本重装，否则可能无法引导${gl_bai}"
 			fi
+		elif [ "$engine" = reinstall ]; then
+			echo -e "${gl_hui}reinstall 不支持软 RAID，将安装到当前系统所在硬盘${gl_bai}"
 		else
 			echo -e "${gl_hui}${label} 不支持 InstallNET 的软 RAID，将安装到单块硬盘${gl_bai}"
 		fi
 	fi
 
-	args=("$sys" "$ver")
-	[ "$sys" = "-alpine" ] || args+=(-pwd "$pwd")
-	args+=(-port "$port")
-	[ -n "$raid" ] && args+=(-raid "$raid")
+	if [ "$engine" = installnet ]; then
+		args=("$sys" "$ver")
+		[ "$sys" = "-alpine" ] || args+=(-pwd "$pwd")
+		args+=(-port "$port")
+		[ -n "$raid" ] && args+=(-raid "$raid")
+	else
+		args=("$rsys")
+		[ -n "$rver" ] && args+=("$rver")
+		args+=(--password "$pwd" --ssh-port "$port")
+	fi
 
 	echo ""
 	echo -e "${gl_cyan}确认重装信息${gl_bai}"
@@ -2513,27 +2567,20 @@ dd_xitong() {
 	echo -e "root 密码 : ${gl_huang}${pwd}${gl_bai}"
 	echo "SSH 端口  : $port"
 	if [ -n "$raid" ]; then echo "软 RAID   : RAID $raid"; else echo "软 RAID   : 不使用"; fi
-	echo "执行命令  : bash InstallNET.sh ${args[*]}" | sed "s/-pwd [^ ]*/-pwd ******/"
+	echo "执行命令  : bash ${installer##*/} ${args[*]}" | sed -E "s/(-pwd|--password) [^ ]*/\1 ******/"
 	echo "------------------------"
 	echo -e "${gl_hong}硬盘数据将被全部清除，且无法恢复！${gl_bai}"
 	read -r -e -p "确认重装请输入 yes: " confirm
 	[ "$confirm" = "yes" ] || { echo "已取消"; return 1; }
 
-	install curl wget
-	if ! curl -fsSL -m 60 -o "$installer" "${gh_proxy}raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh" ||
-		! head -1 "$installer" | grep -q '^#!/'; then
-		echo -e "${gl_hong}InstallNET.sh 下载失败，请检查网络后重试${gl_bai}"
-		return 1
-	fi
 	chmod +x "$installer"
-
-	if bash "$installer" "${args[@]}"; then
+	if (cd /root && bash "$installer" "${args[@]}"); then
 		echo ""
 		echo -e "${gl_lv}安装环境已准备好，重启后开始重装${gl_bai}（可在服务商 VNC 中查看进度）"
 		echo -e "重装完成后用 ${gl_huang}root / 上面的密码 / 端口 ${port}${gl_bai} 登录"
 		server_reboot
 	else
-		echo -e "${gl_hong}InstallNET 执行失败，未重启。请根据上方输出排查${gl_bai}"
+		echo -e "${gl_hong}${name} 执行失败，未重启。请根据上方输出排查${gl_bai}"
 		return 1
 	fi
 }
