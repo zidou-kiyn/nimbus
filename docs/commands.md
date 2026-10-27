@@ -30,6 +30,7 @@
 | `nb swap 2048` | 设置虚拟内存（MB） |
 | `nb time Asia/Shanghai` | 设置时区 |
 | `nb secupdate` | 自动安装安全更新 |
+| `nb blesh` | ble.sh 命令行增强（安装 / 更新 / 卸载） |
 | `nb self-update` | 更新 Nimbus 脚本（保留国内 / IPv6 线路设置，自动更新任务也用它） |
 | `nb backup` | 系统备份与恢复 |
 | `nb disk` | 硬盘管理 |

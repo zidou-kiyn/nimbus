@@ -5,6 +5,7 @@
 - [重装系统](#重装系统)
 - [BBRv3 加速](#bbrv3-加速)
 - [自动安装安全更新](#自动安装安全更新)
+- [ble.sh 命令行增强](#blesh-命令行增强)
 - [TG-bot 监控预警](#tg-bot-监控预警)
 - [应用部署](#应用部署)
 - [文件与配置位置](#文件与配置位置)
@@ -30,7 +31,7 @@
 | 账号与登录 | 1 修改密码 · 2 密码登录模式 · 3 密钥登录模式 · 4 禁用 root 并新建账户 · 5 用户管理 · 6 用户 / 密码生成器 |
 | 网络 | 7 开放所有端口 · 8 修改 SSH 端口 · 9 优化 DNS · 10 IPv4 / IPv6 优先 · 11 端口占用 · 12 防火墙 · 13 hosts 解析 · 14 网卡管理 |
 | 系统 | 15 重装系统 · 16 虚拟内存 · 17 时区 · 18 BBRv3 · 19 主机名 · 20 更新源 · 21 定时任务 · 22 系统语言 · 23 环境变量 |
-| 安全与运维 | 24 fail2ban · 25 限流自动关机 · 26 TG-bot 监控 · 27 命令行美化 · 28 备份与恢复 · 29 硬盘分区 · 30 命令历史 · 31 日志管理 · 32 自动安装安全更新 |
+| 安全与运维 | 24 fail2ban · 25 限流自动关机 · 26 TG-bot 监控 · 27 命令行美化 · 28 备份与恢复 · 29 硬盘分区 · 30 命令历史 · 31 日志管理 · 32 自动安装安全更新 · 33 ble.sh 命令行增强 |
 | 其他 | 99 重启服务器 · 101 命令行用法 · 102 卸载 Nimbus |
 
 ## 重装系统
@@ -64,6 +65,23 @@
 - 不涉及 XanMod、Docker、PVE 等第三方源，PVE 的升级仍需手动 `apt dist-upgrade`。
 - 菜单可开启 / 关闭、模拟运行、立即执行一次、查看日志，并显示上次和下次运行时间。
 
+## ble.sh 命令行增强
+
+[ble.sh](https://github.com/akinomyoga/ble.sh) 用纯 bash 实现的行编辑器：语法高亮、灰色自动建议（类似 fish）、增强补全。入口：新机开荒第 17 步、系统工具 33、`nb blesh`。
+
+- 装在**当前用户**下（`~/.local/share/blesh`），下载 nightly 包安装，不需要 git / make；国内机器走 GitHub 代理。
+- 在 `~/.bashrc` 开头和结尾写入加载块（官方推荐写法：开头 `--attach=none`，结尾 `ble-attach`）；手动加过的 `source …/ble.sh` 行会被注释掉，避免重复加载。改动前备份为 `.bashrc.bak.*`。
+- 推荐快捷键写入 `~/.blerc`（来源 `res/config/blesh/blerc`），已有不同配置时先显示差异再确认：
+
+| 按键 | 作用 |
+|---|---|
+| 回车 | 执行，多行也执行；引号、括号、`if` 等没写完时换行，不会执行半截命令 |
+| Ctrl+J | 换行。显示灰色建议或在 Ctrl+R 搜索中时也只换行 / 结束搜索，不会误执行 |
+| Shift+Tab、→、End | 接受整条灰色建议（Alt+F 接受一个词） |
+| Ctrl+H | 删除光标前一个词。若终端的退格键发送 `^H`，请删掉 `~/.blerc` 中这一行 |
+
+- ble.sh **不会自动更新**：在菜单里选「仅更新 ble.sh」（走同样的代理），或在可直连 GitHub 的机器上执行 `ble-update`。
+
 ## TG-bot 监控预警
 
 - **资源监控**：CPU、内存、硬盘使用率和出入站流量超过阈值时，推送 Telegram 告警；由 systemd 服务 `tg-check-notify` 托管，无 systemd 的系统用 crontab。
@@ -74,9 +92,9 @@
 
 | 应用 | 入口 | 说明 |
 |---|---|---|
-| [Komari](https://github.com/komari-monitor/komari-agent) 探针 Agent | 开荒 20 | 填写面板地址、自动发现密钥和月流量重置日；国内机器默认通过加速镜像下载 |
-| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 21 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理 |
-| [XBoard-node](https://github.com/cedar2025/xboard-node) | 开荒 22 | 填写面板地址、Token、节点 ID，内核可选 xray（默认）或 sing-box；支持状态查看、升级、卸载 |
+| [Komari](https://github.com/komari-monitor/komari-agent) 探针 Agent | 开荒 21 | 填写面板地址、自动发现密钥和月流量重置日；国内机器默认通过加速镜像下载 |
+| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 22 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理 |
+| [XBoard-node](https://github.com/cedar2025/xboard-node) | 开荒 23 | 填写面板地址、Token、节点 ID，内核可选 xray（默认）或 sing-box；支持状态查看、升级、卸载 |
 
 ## 文件与配置位置
 
@@ -87,6 +105,7 @@
 | `/etc/nimbus/wizard.state` | 新机开荒的执行记录与手动标记 |
 | `/etc/apt/apt.conf.d/52nimbus-security-only` | 自动安全更新策略 |
 | `/etc/sysctl.d/99-nimbus-bbr.conf` | BBR 设置 |
+| `~/.local/share/blesh`、`~/.blerc` | ble.sh 及其快捷键配置 |
 
 国内 / IPv6 模式使用的 GitHub 代理，在 `nimbus.sh` 开头的 `gh_proxy_mirror` 变量中配置。
 
@@ -101,7 +120,7 @@ nimbus/
 ├── TG-SSH-check-notify.sh    TG-bot SSH 登录提醒
 ├── Limiting_Shut_down1.sh    限流关机任务
 ├── archive.key               XanMod 仓库签名备用密钥
-├── res/config/               fail2ban 规则（CentOS 系）、tmux 推荐配置
+├── res/config/               fail2ban 规则（CentOS 系）、tmux / ble.sh 推荐配置
 ├── docs/                     文档
 └── assets/                   README 资源
 ```

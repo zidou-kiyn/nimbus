@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.5"
+sh_v="1.2.6"
 
 
 gl_hui='\e[37m'
@@ -5623,6 +5623,173 @@ tmux_setup() {
 }
 
 # ---------------------------------------------------------------------------
+# ble.sh 命令行增强（语法高亮、自动建议）及 Nimbus 推荐配置，装在当前用户下
+# ---------------------------------------------------------------------------
+NB_BLESH_DIR="$HOME/.local/share/blesh"
+
+nb_blesh_version() {
+	grep -a -m1 -oE '_ble_init_version=[^ ;]+' "$NB_BLESH_DIR/ble.sh" 2>/dev/null | cut -d= -f2
+}
+
+# 下载 nightly 包，安装或覆盖到 ~/.local/share/blesh（国内走代理，不依赖 git / make）
+nb_blesh_install() {
+	local tmp src old
+	if ! command -v xz >/dev/null 2>&1; then
+		if command -v apt >/dev/null 2>&1; then install xz-utils; else install xz; fi
+	fi
+	command -v awk >/dev/null 2>&1 || install gawk
+	old=$(nb_blesh_version)
+	tmp=$(mktemp -d) || return 1
+	echo "正在下载 ble.sh（nightly）..."
+	if ! nb_download github.com/akinomyoga/ble.sh/releases/download/nightly/ble-nightly.tar.xz "$tmp/ble.tar.xz" ||
+		! tar -xJf "$tmp/ble.tar.xz" -C "$tmp" 2>/dev/null; then
+		rm -rf "$tmp"
+		echo -e "${gl_hong}ble.sh 下载或解压失败${gl_bai}"
+		return 1
+	fi
+	src=$(ls -d "$tmp"/ble-nightly*/ 2>/dev/null | head -n 1)
+	if [ -z "$src" ] || ! bash "${src}ble.sh" --install "$HOME/.local/share" >"$tmp/install.log" 2>&1 || [ ! -f "$NB_BLESH_DIR/ble.sh" ]; then
+		tail -n 5 "$tmp/install.log" 2>/dev/null
+		rm -rf "$tmp"
+		echo -e "${gl_hong}ble.sh 安装失败${gl_bai}"
+		return 1
+	fi
+	rm -rf "$tmp"
+	if [ -n "$old" ] && [ "$old" != "$(nb_blesh_version)" ]; then
+		echo -e "${gl_lv}ble.sh 已更新: $old → $(nb_blesh_version)${gl_bai}"
+	else
+		echo -e "${gl_lv}ble.sh $(nb_blesh_version) 已安装到 $NB_BLESH_DIR${gl_bai}"
+	fi
+}
+
+# 在 ~/.bashrc 首尾写入加载块（官方推荐写法：开头 --attach=none，结尾 ble-attach）
+# 手动添加过的 source ble.sh / ble-attach 行会被注释掉，避免重复加载
+nb_blesh_bashrc() {
+	local rc="$HOME/.bashrc" tmp
+	[ -f "$rc" ] || touch "$rc"
+	tmp=$(mktemp) || return 1
+	{
+		echo '# >>> nimbus ble.sh >>>'
+		echo '[[ $- == *i* && -f ~/.local/share/blesh/ble.sh ]] && source ~/.local/share/blesh/ble.sh --attach=none'
+		echo '# <<< nimbus ble.sh <<<'
+		awk '
+			/^# >>> nimbus ble\.sh/ { skip = 1; next }
+			/^# <<< nimbus ble\.sh/ { skip = 0; next }
+			skip { next }
+			/^[^#]*(source|\.)[ \t]+[^#]*blesh\/ble\.sh/ || /^[^#]*ble-attach/ { print "# [nimbus] " $0; next }
+			{ print }
+		' "$rc"
+		echo '# >>> nimbus ble.sh attach >>>'
+		echo '[[ ! ${BLE_VERSION-} ]] || ble-attach'
+		echo '# <<< nimbus ble.sh attach <<<'
+	} > "$tmp" || { rm -f "$tmp"; return 1; }
+	if cmp -s "$tmp" "$rc"; then
+		rm -f "$tmp"
+		echo -e "${gl_lv}~/.bashrc 已启用 ble.sh，无需修改${gl_bai}"
+		return 0
+	fi
+	cp -f "$rc" "$rc.bak.$(date +%Y%m%d-%H%M%S)"
+	cat "$tmp" > "$rc"
+	rm -f "$tmp"
+	echo -e "${gl_lv}已在 ~/.bashrc 启用 ble.sh（原文件已备份为 .bashrc.bak.*）${gl_bai}"
+}
+
+nb_blesh_unbashrc() {
+	local rc="$HOME/.bashrc" tmp
+	grep -qs '^# >>> nimbus ble\.sh' "$rc" || return 0
+	tmp=$(mktemp) || return 1
+	awk '/^# >>> nimbus ble\.sh/ { skip = 1; next } /^# <<< nimbus ble\.sh/ { skip = 0; next } !skip' "$rc" > "$tmp" && cat "$tmp" > "$rc"
+	rm -f "$tmp"
+	echo "已从 ~/.bashrc 移除 ble.sh 加载块"
+}
+
+# 写入 Nimbus 推荐配置 ~/.blerc（与 tmux 一样，已有不同配置时先展示差异再确认）
+nb_blesh_conf() {
+	local conf="$HOME/.blerc" tmp choice bak
+	tmp=$(mktemp) || return 1
+	if ! nb_download raw.githubusercontent.com/zidou-kiyn/nimbus/main/res/config/blesh/blerc "$tmp" || ! grep -q 'Nimbus ble.sh' "$tmp"; then
+		rm -f "$tmp"
+		echo -e "${gl_hong}配置文件下载失败${gl_bai}"
+		return 1
+	fi
+	if [ -f "$conf" ]; then
+		if cmp -s "$tmp" "$conf"; then
+			rm -f "$tmp"
+			echo -e "${gl_lv}ble.sh 配置已是最新，无需修改${gl_bai}"
+			return 0
+		fi
+		echo -e "${gl_huang}已存在 $conf，与推荐配置的差异如下（- 现有 / + 推荐）:${gl_bai}"
+		diff -u "$conf" "$tmp" | sed -n '3,200p' | grep -E '^[-+]' | head -40
+		echo "------------------------"
+		read -r -e -p "备份现有配置并替换吗？(Y/N): " choice
+		case "$choice" in
+			[Yy]) ;;
+			*) rm -f "$tmp"; echo "已取消，保留现有配置"; return 0 ;;
+		esac
+		bak="$conf.bak.$(date +%Y%m%d-%H%M%S)"
+		cp -f "$conf" "$bak"
+		echo "已备份到 $bak"
+	fi
+	mv -f "$tmp" "$conf"
+	chmod 644 "$conf"
+	echo -e "${gl_lv}已写入 $conf${gl_bai}"
+}
+
+nb_blesh_uninstall() {
+	local choice
+	read -r -e -p "确定卸载 ble.sh 并移除 ~/.bashrc 中的加载块吗？(Y/N): " choice
+	case "$choice" in [Yy]) ;; *) echo "已取消"; return 0 ;; esac
+	nb_blesh_unbashrc
+	rm -rf "$NB_BLESH_DIR" "$HOME/.local/share/doc/blesh" "$HOME/.cache/blesh" "${XDG_STATE_HOME:-$HOME/.local/state}/blesh"
+	grep -qs 'Nimbus ble.sh' "$HOME/.blerc" && rm -f "$HOME/.blerc"
+	echo -e "${gl_lv}ble.sh 已卸载，重新登录后生效${gl_bai}"
+}
+
+blesh_setup() {
+	local choice ver sh
+	while true; do
+		clear
+		echo "ble.sh 命令行增强"
+		echo "------------------------------------------------"
+		echo "为 bash 提供语法高亮、灰色自动建议（类似 fish）、增强补全，并写入 Nimbus 推荐快捷键:"
+		echo "  回车=执行（命令没写完时换行）  Ctrl+J=换行  Shift+Tab / →=接受建议  Ctrl+H=删前一个词"
+		echo -e "${gl_hui}项目: github.com/akinomyoga/ble.sh · 配置来源: res/config/blesh/blerc · 安装位置: ~/.local/share/blesh${gl_bai}"
+		echo "------------------------------------------------"
+		ver=$(nb_blesh_version)
+		if [ -z "$ver" ]; then
+			echo -e "当前状态: ${gl_hui}未安装${gl_bai}"
+		elif grep -qs 'blesh/ble\.sh' "$HOME/.bashrc"; then
+			echo -e "当前状态: ${gl_lv}已启用${gl_bai} $ver"
+		else
+			echo -e "当前状态: ${gl_huang}已安装，未在 ~/.bashrc 启用${gl_bai} $ver"
+		fi
+		if [ -n "$ver" ]; then
+			grep -qs 'Nimbus ble.sh' "$HOME/.blerc" && echo "快捷键  : Nimbus 推荐配置" || echo -e "快捷键  : ${gl_hui}$( [ -f "$HOME/.blerc" ] && echo '自定义 ~/.blerc' || echo '默认')${gl_bai}"
+		fi
+		sh=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)
+		case "$sh" in */bash|"") ;; *) echo -e "${gl_huang}当前用户的登录 shell 是 $sh，ble.sh 只在 bash 中生效${gl_bai}" ;; esac
+		echo "------------------------------------------------"
+		echo "1. 安装 / 更新并写入推荐配置    2. 仅更新 ble.sh"
+		echo "3. 卸载"
+		echo "------------------------------------------------"
+		echo "0. 返回"
+		echo "------------------------------------------------"
+		read -r -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				nb_blesh_install && nb_blesh_bashrc && nb_blesh_conf &&
+					echo -e "${gl_huang}重新登录或执行 exec bash 后生效${gl_bai}"
+				break_end ;;
+			2)
+				if [ -z "$(nb_blesh_version)" ]; then echo "尚未安装，请选 1"; else nb_blesh_install && echo -e "${gl_huang}新开的终端生效${gl_bai}"; fi
+				break_end ;;
+			3) nb_blesh_uninstall; break_end ;;
+			*) break ;;
+		esac
+	done
+}
+
+# ---------------------------------------------------------------------------
 # Komari 探针 Agent
 # ---------------------------------------------------------------------------
 komari_agent_menu() {
@@ -6066,6 +6233,13 @@ nb_wz_status() {
 			if command -v tmux >/dev/null 2>&1 && grep -qs 'Nimbus tmux' "$HOME/.tmux.conf"; then WZ_DONE=true; WZ_TEXT="已配置"
 			elif command -v tmux >/dev/null 2>&1; then WZ_TEXT="已安装，未写入推荐配置"
 			else WZ_TEXT="未安装"; fi ;;
+		blesh)
+			v=$(nb_blesh_version)
+			if [ -n "$v" ] && grep -qs 'blesh/ble\.sh' "$HOME/.bashrc"; then
+				WZ_DONE=true; WZ_TEXT="已启用 $v"
+				grep -qs 'Nimbus ble.sh' "$HOME/.blerc" || WZ_TEXT="$WZ_TEXT · 未写入推荐快捷键"
+			elif [ -n "$v" ]; then WZ_TEXT="已安装 $v，未在 .bashrc 启用"
+			else WZ_TEXT="未安装"; fi ;;
 		tg)
 			if [ -f "$TG_NOTIFY_CONF" ] && { nb_service_active tg-check-notify || pgrep -f '^/bin/bash /root/TG-check-notify.sh' >/dev/null 2>&1; }; then WZ_DONE=true; WZ_TEXT="运行中"
 			elif [ -f "$TG_NOTIFY_CONF" ]; then WZ_TEXT="已配置，监控未运行"
@@ -6154,10 +6328,10 @@ nb_wz_effective() {
 nb_wizard() {
 	root_use
 	local choice next next_title i key n cmd nums
-	local -a keys=("dd" "passwd" "update" "bbr" "reboot" "tz" "hostname" "hosts" "swap" "dns" "autosec" "sshkey" "sshport" "sudo" "f2b" "tmux" "tg" "lang" "ps1" "komari" "realm" "xboard")
-	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "自动安装安全更新                   " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "TG-bot 监控预警（可选）            " "切换系统语言                       " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
-	local -a funcs=("dd_xitong" "nb_wz_passwd" "linux_update" "bbrv3" "nb_wz_reboot_check" "nb_timezone_menu" "nb_hostname_menu" "nb_hosts_menu" "nb_swap_menu" "set_dns_ui" "nb_security_updates" "sshkey_panel" "nb_ssh_port_menu" "nb_create_sudo_user" "fail2ban_panel" "tmux_setup" "tg_notify_menu" "linux_language" "shell_bianse" "komari_agent_menu" "realm_xwpf" "xboard_node_menu")
-	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "1" "0" "0" "1" "1" "1")
+	local -a keys=("dd" "passwd" "update" "bbr" "reboot" "tz" "hostname" "hosts" "swap" "dns" "autosec" "sshkey" "sshport" "sudo" "f2b" "tmux" "blesh" "tg" "lang" "ps1" "komari" "realm" "xboard")
+	local -a titles=("重装系统 DD（可选）                " "修改 root 密码                     " "更新系统软件包                     " "内核与 BBR 加速                    " "重启并检查内核                     " "系统时区                           " "主机名                             " "本机 hosts 解析                    " "虚拟内存                           " "优化 DNS                           " "自动安装安全更新                   " "SSH 密钥登录（禁用密码）           " "修改 SSH 端口                      " "新建 sudo 用户并禁用 root（可选）  " "fail2ban SSH 防御                  " "tmux 及推荐配置                    " "ble.sh 命令行增强                  " "TG-bot 监控预警（可选）            " "切换系统语言                       " "命令行美化                         " "Komari 探针（可选）                " "Realm 端口转发（可选）             " "XBoard-node 节点（可选）           ")
+	local -a funcs=("dd_xitong" "nb_wz_passwd" "linux_update" "bbrv3" "nb_wz_reboot_check" "nb_timezone_menu" "nb_hostname_menu" "nb_hosts_menu" "nb_swap_menu" "set_dns_ui" "nb_security_updates" "sshkey_panel" "nb_ssh_port_menu" "nb_create_sudo_user" "fail2ban_panel" "tmux_setup" "blesh_setup" "tg_notify_menu" "linux_language" "shell_bianse" "komari_agent_menu" "realm_xwpf" "xboard_node_menu")
+	local -a opts=("1" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "0" "1" "0" "0" "0" "1" "0" "0" "1" "1" "1")
 	while true; do
 		clear
 		echo -e "${gl_cyan}新机开荒${gl_bai} · 按推荐顺序逐项完成，可随时退出，回来后继续（nb init）"
@@ -6170,7 +6344,7 @@ nb_wizard() {
 				6) echo -e "${gl_cyan}【三 · 系统设置】${gl_bai}" ;;
 				12) echo -e "${gl_cyan}【四 · SSH 与账号安全】${gl_bai}" ;;
 				16) echo -e "${gl_cyan}【五 · 环境与监控】${gl_bai}" ;;
-				20) echo -e "${gl_cyan}【六 · 应用部署（按需）】${gl_bai}" ;;
+				21) echo -e "${gl_cyan}【六 · 应用部署（按需）】${gl_bai}" ;;
 			esac
 			key="${keys[$i]}"
 			nb_wz_effective "$key"
@@ -6541,7 +6715,7 @@ linux_Settings() {
 	  echo -e "${gl_cyan}26.  ${gl_bai}TG-bot系统监控预警                 ${gl_cyan}27.  ${gl_bai}命令行美化工具 ${gl_huang}★${gl_bai}"
 	  echo -e "${gl_cyan}28.  ${gl_bai}系统备份与恢复                     ${gl_cyan}29.  ${gl_bai}硬盘分区管理工具"
 	  echo -e "${gl_cyan}30.  ${gl_bai}命令行历史记录                     ${gl_cyan}31.  ${gl_bai}系统日志管理工具 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_cyan}32.  ${gl_bai}自动安装安全更新"
+	  echo -e "${gl_cyan}32.  ${gl_bai}自动安装安全更新                   ${gl_cyan}33.  ${gl_bai}ble.sh 命令行增强"
 	  echo -e "${gl_cyan}------------------------"
 	  echo -e "${gl_cyan}99.  ${gl_bai}重启服务器                         ${gl_cyan}101. ${gl_bai}命令行用法 ${gl_huang}★${gl_bai}"
 	  echo -e "${gl_cyan}102. ${gl_bai}卸载 Nimbus"
@@ -7006,6 +7180,10 @@ EOF
 			  nb_security_updates
 			  ;;
 
+		  33)
+			  blesh_setup
+			  ;;
+
 		  23)
 			  clear
 			  env_menu
@@ -7234,6 +7412,7 @@ echo "以下是 nb 命令参考用例："
 echo "启动脚本            nb"
 echo "新机开荒            nb init | nb 开荒"
 echo "自动安装安全更新    nb secupdate | nb 安全更新"
+echo "ble.sh 命令行增强   nb blesh"
 echo "更新 Nimbus 脚本    nb self-update"
 echo "安装软件包          nb install nano wget | nb add nano wget | nb 安装 nano wget"
 echo "卸载软件包          nb remove nano wget | nb del nano wget | nb uninstall nano wget | nb 卸载 nano wget"
@@ -7297,6 +7476,9 @@ else
 			;;
 		secupdate|安全更新)
 			nb_security_updates
+			;;
+		blesh|ble)
+			blesh_setup
 			;;
 		self-update|selfupdate)
 			if nb_self_update; then

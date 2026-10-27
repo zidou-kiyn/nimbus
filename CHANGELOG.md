@@ -79,3 +79,11 @@ tmux 推荐配置优化（Termius 手机/电脑 + tmux 内运行 pi）。
 4.保存 iptables 规则时去掉 fail2ban 的 f2b-* 链：之前会把当时被封的 IP 一起存进 rules.v4，开机恢复后变成永久封禁，fail2ban 也不会解封。
 5.防火墙菜单的清除 IP、允许 / 禁用 PING 改用统一的保存逻辑（同时保存 IPv6 规则与开机恢复任务）。
 ------------------------
+2026-10-27   v1.2.6
+新增「ble.sh 命令行增强」（新机开荒第 17 步 / 系统工具 33 / nb blesh）。
+1.安装 ble.sh：语法高亮、灰色自动建议、增强补全。装在当前用户的 ~/.local/share/blesh，下载 nightly 包安装，不需要 git / make，国内机器走 GitHub 代理；可单独更新或卸载。
+2.~/.bashrc 首尾写入加载块（开头 --attach=none、结尾 ble-attach），手动添加过的 source ble.sh 行自动注释，改动前备份。
+3.推荐快捷键写入 ~/.blerc（res/config/blesh/blerc）：回车执行、命令没写完时换行；Ctrl+J 换行；Shift+Tab 接受建议；Ctrl+H 删前一个词。
+4.防误触：显示灰色建议时 Ctrl+J 原本会「接受建议并执行」，Ctrl+R 搜索中 Ctrl+J 原本会直接执行，均改为不执行。
+5.新机开荒原 17–22 步顺延为 18–23 步。
+------------------------

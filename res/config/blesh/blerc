@@ -1,0 +1,22 @@
+# Nimbus ble.sh 配置 — https://github.com/zidou-kiyn/nimbus/blob/main/res/config/blesh/blerc
+# 回车=执行（命令没写完时换行）| Ctrl+J=换行 | Shift+Tab / →=接受灰色建议 | Alt+F=接受一个词 | Ctrl+H=删前一个词
+
+# ---- 回车与换行 ----
+# 回车直接执行（多行也执行）；引号/括号/if 等没写完时自动换行，不会执行半截命令
+ble-bind -f 'C-m' 'accept-line syntax'
+ble-bind -f 'RET' 'accept-line syntax'
+# Ctrl+J 换行（默认是执行）
+ble-bind -f 'C-j' newline
+# 显示灰色建议时 Ctrl+J 默认是「接受建议并执行」，改为丢弃建议后换行，防误触
+ble-bind -m auto_complete -f 'C-j' auto_complete/cancel-default
+# Ctrl+R 搜索历史时 Ctrl+J 默认也是直接执行，改为只结束搜索、把命令留在输入行
+ble-bind -m isearch -f 'C-j' isearch/exit
+ble-bind -m nsearch -f 'C-j' nsearch/exit
+
+# ---- 自动建议 ----
+# Shift+Tab 接受整条灰色建议（→ / End / Ctrl+F 同样可以）
+ble-bind -m auto_complete -f 'S-TAB' auto_complete/insert
+
+# ---- 删除 ----
+# Ctrl+H 删除光标前一个词（以空格和 / 分隔）。若终端的退格键发送的是 ^H，请删掉这一行
+ble-bind -f 'C-h' kill-backward-fword
