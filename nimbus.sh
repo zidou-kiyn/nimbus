@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.10"
+sh_v="1.2.11"
 
 
 gl_hui='\e[37m'
@@ -327,7 +327,7 @@ nimbus_home() {
 
 install_add_docker_cn() {
 
-local country=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country)
+local country=$(nb_country)
 if [ "$country" = "CN" ]; then
 	cat > /etc/docker/daemon.json << EOF
 {
@@ -364,7 +364,7 @@ restart docker
 
 linuxmirrors_install_docker() {
 
-local country=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country)
+local country=$(nb_country)
 if [ "$country" = "CN" ]; then
 	bash <(curl -sSL https://linuxmirrors.cn/docker.sh) \
 	  --source mirrors.huaweicloud.com/docker-ce \
@@ -3440,6 +3440,7 @@ linux_info() {
 	local country=$(echo "$ipinfo" | grep 'country' | awk -F': ' '{print $2}' | tr -d '",')
 	local city=$(echo "$ipinfo" | grep 'city' | awk -F': ' '{print $2}' | tr -d '",')
 	local isp_info=$(echo "$ipinfo" | grep 'org' | awk -F': ' '{print $2}' | tr -d '",')
+	[ -n "$country" ] || country=$(nb_country)
 
 	local load=$(uptime | awk '{print $(NF-2), $(NF-1), $NF}')
 	local dns_addresses=$(awk '/^nameserver/{printf "%s ", $2} END {print ""}' /etc/resolv.conf)
@@ -4548,7 +4549,7 @@ switch_mirror() {
 
 	# 获取用户国家
 	local country
-	country=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country)
+	country=$(nb_country)
 
 	echo "检测到国家：$country"
 
@@ -5084,6 +5085,7 @@ tg_notify_probe() {
 	echo "正在探测本机信息..."
 	json=$(curl -s -m 5 https://ipinfo.io/json 2>/dev/null)
 	tg_probe_country=$(tg_notify_json "$json" '.country // empty')
+	[ -n "$tg_probe_country" ] || tg_probe_country=$(nb_country)
 	org=$(tg_notify_json "$json" '.org // empty')
 	tg_probe_isp=$(printf '%s' "$org" | awk '{print ($2 != "" ? $2 : $1)}')
 	ip=$(curl -s -m 5 https://ipv4.ip.sb 2>/dev/null | tr -d '[:space:]')
@@ -5645,10 +5647,21 @@ nb_download() {
 	return 1
 }
 
+# 本机 IP 所在国家代码（如 CN、US），查不到时输出为空
+# 先查 ipinfo.io；连不上（如无国际出口的国内机器）时用 Cloudflare 国内节点的 trace 接口（qualcomm.cn，国内外都能访问）
+nb_country() {
+	local c
+	c=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+	if ! [[ "$c" =~ ^[A-Z]{2}$ ]]; then
+		c=$(curl -s --connect-timeout 3 -m 5 http://www.qualcomm.cn/cdn-cgi/trace 2>/dev/null | sed -n 's/^loc=//p' | tr -d '[:space:]')
+	fi
+	[[ "$c" =~ ^[A-Z]{2}$ ]] && echo "$c"
+}
+
 # 是否为国内服务器（CN 模式或 IP 归属地为 CN）
 nb_in_cn() {
 	[ "$canshu" = "CN" ] && return 0
-	[ "$(curl -s -m 3 ipinfo.io/country 2>/dev/null)" = "CN" ]
+	[ "$(nb_country)" = "CN" ]
 }
 
 nb_service_active() {
@@ -7395,7 +7408,7 @@ nb_self_update() {
 	local mode="$canshu" base="raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh" tmp url urls
 	# 尚未设置模式时检测一次：国内 IP → CN；只有 IPv6 出口（无 IPv4 默认路由）→ V6；双栈/纯 IPv4 保持直连
 	if [ "$mode" = "default" ]; then
-		if [ "$(curl -s -m 5 ipinfo.io/country 2>/dev/null)" = "CN" ]; then
+		if [ "$(nb_country)" = "CN" ]; then
 			mode="CN"
 		elif [ -z "$(ip -4 route show default 2>/dev/null)" ] && [ -n "$(ip -6 route show default 2>/dev/null)" ]; then
 			mode="V6"
