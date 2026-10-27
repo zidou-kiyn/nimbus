@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.16"
+sh_v="1.2.17"
 
 
 gl_hui='\e[37m'
@@ -2828,7 +2828,7 @@ bbrv3() {
 				local keyring="/usr/share/keyrings/xanmod-archive-keyring.gpg"
 				local list_file="/etc/apt/sources.list.d/xanmod-release.list"
 				local key_url="https://dl.xanmod.org/archive.key"
-				local os_codename="" repo tmpkey
+				local os_codename="" repo tmpkey m
 
 				if command -v lsb_release >/dev/null 2>&1; then
 					os_codename=$(lsb_release -sc)
@@ -2855,14 +2855,22 @@ bbrv3() {
 				install wget gnupg ca-certificates
 				mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
 
-				# 仓库：官方 deb.xanmod.org 连不上时（如无国际出口的国内机器）改用清华 TUNA 镜像
+				# 仓库：官方 deb.xanmod.org 连不上时（如无国际出口的国内机器）改用国内镜像，与官方同步
+				# 南京大学在前：清华 TUNA 对非教育网限速明显（实测腾讯云广州 ~160 KB/s，南大 ~17 MB/s）
+				repo=""
 				if nb_tcp_ok deb.xanmod.org 80; then
 					repo="http://deb.xanmod.org"
-				elif nb_tcp_ok mirrors.tuna.tsinghua.edu.cn 443; then
-					repo="https://mirrors.tuna.tsinghua.edu.cn/xanmod"
-					echo "XanMod 官方仓库无法连接，改用清华 TUNA 镜像"
 				else
-					echo -e "${gl_hong}XanMod 官方仓库和清华 TUNA 镜像都无法连接，请检查网络${gl_bai}"
+					for m in mirror.nju.edu.cn mirrors.tuna.tsinghua.edu.cn mirrors.bfsu.edu.cn; do
+						if nb_tcp_ok "$m" 443; then
+							repo="https://$m/xanmod"
+							echo "XanMod 官方仓库无法连接，改用国内镜像 $m"
+							break
+						fi
+					done
+				fi
+				if [ -z "$repo" ]; then
+					echo -e "${gl_hong}XanMod 官方仓库和国内镜像都无法连接，请检查网络${gl_bai}"
 					return 1
 				fi
 
