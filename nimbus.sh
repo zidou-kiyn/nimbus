@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.7"
+sh_v="1.2.8"
 
 
 gl_hui='\e[37m'
@@ -2863,15 +2863,41 @@ done
 
 
 
+# PS1 写在哪个文件：登录时会加载 ~/.bashrc 就写 ~/.bashrc（ble.sh 在 .bashrc 末尾 ble-attach，
+# 之后再设的 PS1 会被它还原，所以必须写在 .bashrc 里、attach 之前）；否则写 ~/.profile（如 Alpine）
+nb_ps1_rc() {
+	local f
+	for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+		[ -f "$f" ] || continue
+		grep -qs '\.bashrc' "$f" && echo "$HOME/.bashrc" || echo "$HOME/.profile"
+		return
+	done
+	echo "$HOME/.profile"
+}
+
+# 把 stdin 里的 nimbus PS1 块写进 $1：有 ble.sh attach 块时插在它前面，否则追加到末尾
+nb_ps1_insert() {
+	local rc="$1" blk tmp
+	blk=$(cat)
+	[ -n "$blk" ] || return 0
+	touch "$rc"
+	if grep -q '^# >>> nimbus ble\.sh attach >>>' "$rc"; then
+		tmp=$(mktemp) || return 1
+		BLK="$blk" awk '/^# >>> nimbus ble\.sh attach >>>/ && !done { print ENVIRON["BLK"]; done = 1 } { print }' "$rc" > "$tmp" &&
+			cat "$tmp" > "$rc"
+		rm -f "$tmp"
+	else
+		printf '%s\n' "$blk" >> "$rc"
+	fi
+}
+
 shell_bianse_profile() {
 	# PS1 使用 bash 专有转义：放在 if [ -n "$BASH" ] 中，避免 dash 等 sh 登录时原样打印
-	local rc="$HOME/.profile"
-	if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
-		rc="$HOME/.bashrc"
-	fi
-	touch "$rc"
-	# 清理旧版直接写入的 PS1= 行和已有的 nimbus 配置块
-	sed -i -e '/^PS1=/d' -e '/^# >>> nimbus PS1 >>>$/,/^# <<< nimbus PS1 <<<$/d' "$rc"
+	local rc
+	rc=$(nb_ps1_rc)
+	# 清理旧版直接写入的 PS1= 行和 .profile / .bashrc 里已有的 nimbus 配置块
+	nb_ps1_profile_clean
+	[ -f "$HOME/.bashrc" ] && sed -i -e '/^PS1=/d' -e '/^# >>> nimbus PS1 >>>$/,/^# <<< nimbus PS1 <<<$/d' "$HOME/.bashrc"
 	if [ -n "$bianse" ]; then
 		{
 			echo '# >>> nimbus PS1 >>>'
@@ -2880,9 +2906,9 @@ shell_bianse_profile() {
 			echo "	${bianse}"
 			echo 'fi'
 			echo '# <<< nimbus PS1 <<<'
-		} >> "$rc"
+		} | nb_ps1_insert "$rc"
 	fi
-	echo -e "${gl_lv}变更完成。重新连接SSH后可查看变化！${gl_bai}"
+	echo -e "${gl_lv}变更完成（写入 $rc）。重新连接SSH后可查看变化！${gl_bai}"
 	hash -r
 	break_end
 }
@@ -5667,6 +5693,7 @@ nb_blesh_install() {
 nb_blesh_bashrc() {
 	local rc="$HOME/.bashrc" tmp
 	[ -f "$rc" ] || touch "$rc"
+	nb_ps1_migrate
 	tmp=$(mktemp) || return 1
 	{
 		echo '# >>> nimbus ble.sh >>>'
@@ -5692,6 +5719,33 @@ nb_blesh_bashrc() {
 	cat "$tmp" > "$rc"
 	rm -f "$tmp"
 	echo -e "${gl_lv}已在 ~/.bashrc 启用 ble.sh（原文件已备份为 .bashrc.bak.*）${gl_bai}"
+}
+
+# 清理 ~/.profile 里的 PS1：删掉 nimbus 配置块；其余 PS1= 行（含手写在 if 里缩进的）改成 `: # [nimbus 已停用] …`
+# 空操作，不直接删，避免 if 体变空导致语法错误
+nb_ps1_profile_clean() {
+	local p="$HOME/.profile"
+	[ -f "$p" ] || return 0
+	sed -i -E -e '/^# >>> nimbus PS1 >>>$/,/^# <<< nimbus PS1 <<<$/d' \
+		-e 's/^([[:space:]]*)(PS1=.*)$/\1: # [nimbus 已停用] \2/' "$p"
+}
+
+# 已在 ~/.profile 设置的 PS1（Nimbus 配置块或其他 PS1= 行）挪到 ~/.bashrc：
+# ble.sh 在 .bashrc 末尾 attach，登录时 .profile 之后再设的 PS1 会被它还原成 .bashrc 里的默认值
+nb_ps1_migrate() {
+	local p="$HOME/.profile" blk line
+	[ -f "$p" ] && [ "$(nb_ps1_rc)" = "$HOME/.bashrc" ] || return 0
+	blk=$(sed -n '/^# >>> nimbus PS1 >>>$/,/^# <<< nimbus PS1 <<<$/p' "$p")
+	if [ -z "$blk" ]; then
+		line=$(grep -E '^[[:space:]]*PS1=' "$p" | tail -n 1 | sed -E 's/^[[:space:]]+//')
+		[ -n "$line" ] || return 0
+		# shellcheck disable=SC2016  # 有意写入字面量 $BASH
+		blk=$(printf '# >>> nimbus PS1 >>>\nif [ -n "$BASH" ]; then\n\t%s\nfi\n# <<< nimbus PS1 <<<' "$line")
+	fi
+	sed -i '/^# >>> nimbus PS1 >>>$/,/^# <<< nimbus PS1 <<<$/d' "$HOME/.bashrc"
+	printf '%s\n' "$blk" | nb_ps1_insert "$HOME/.bashrc"
+	nb_ps1_profile_clean
+	echo "已将命令行美化（PS1）从 ~/.profile 移到 ~/.bashrc，避免被 ble.sh 覆盖"
 }
 
 nb_blesh_unbashrc() {

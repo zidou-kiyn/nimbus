@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.7-6366f1?style=flat-square" alt="version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.8-6366f1?style=flat-square" alt="version"></a>
   <img src="https://img.shields.io/badge/shell-bash-38bdf8?style=flat-square&logo=gnubash&logoColor=white" alt="bash">
   <img src="https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20RHEL%20%7C%20Alpine-0ea5e9?style=flat-square&logo=linux&logoColor=white" alt="platform">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-64748b?style=flat-square" alt="license"></a>
@@ -54,7 +54,7 @@ bash <(curl -sL https://ghfast.top/https://raw.githubusercontent.com/zidou-kiyn/
 - 🐳 **日常运维**：Docker 管理、防火墙、虚拟内存、备份、测速与流媒体检测。
 
 ```text
-Nimbus · 云服务器工具箱 v1.2.7
+Nimbus · 云服务器工具箱 v1.2.8
 ------------------------
 1.   系统信息查询
 2.   系统更新

@@ -93,3 +93,9 @@ XBoard-node 改用 Hei-XiaoHu/Xboard-Node。
 2.安装和升级前先由 Nimbus 下载 xboard-node / xbctl（国内机器走 GitHub 代理），再交给安装脚本，修复国内机器直连 GitHub 下载失败。
 3.菜单显示当前已安装的版本。
 ------------------------
+2026-10-27   v1.2.8
+修复装了 ble.sh 后命令行美化失效（提示符变回全白）。
+1.原因：Debian/Ubuntu 的美化 PS1 写在 ~/.profile，在加载 ~/.bashrc 之后才设置；ble.sh 在 ~/.bashrc 末尾 attach 时接管提示符，之后再设的 PS1 会被它还原成 .bashrc 里的默认值，因此重新美化也不生效。
+2.命令行美化改为写入 ~/.bashrc，并放在 ble.sh 的 attach 块之前（登录时不加载 .bashrc 的系统如 Alpine 仍写 ~/.profile），同时清理 ~/.profile 里旧的配置；~/.profile 中其他 PS1= 行（包括手写在 if 里的）改为注释掉的空操作 `: # [nimbus 已停用] …`，不会破坏 if 语法。
+3.安装 / 更新 ble.sh（系统工具 33 选 1、新机开荒、nb blesh）时，自动把 ~/.profile 里已有的美化配置挪到 ~/.bashrc。已受影响的机器：nb self-update 后重新执行一次命令行美化或 ble.sh 安装即可。
+------------------------
