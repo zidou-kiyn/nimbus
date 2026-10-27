@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.23"
+sh_v="1.2.24"
 
 
 gl_hui='\e[37m'
@@ -15,6 +15,8 @@ gl_cyan='\033[96m'
 
 
 canshu="default"
+# 版本来源：github 为完整版；cnb 为国内镜像版（不含部分功能，由 .github/scripts/cnb_build.py 改写）
+nb_edition="github"
 
 
 
@@ -7957,12 +7959,13 @@ nb_self_update() {
 			mode="V6"
 		fi
 	fi
+	# 只有 GitHub 和代理都连不上时才用国内镜像版（不含部分功能）；能连上时下载失败就保持现有版本，不会换成镜像版
 	if nb_gh_dead 2>/dev/null; then
 		urls="${nb_cnb_raw}nimbus.sh"
 	elif [ "$mode" = "default" ]; then
-		urls="https://$base ${gh_proxy_mirror}https://$base ${nb_cnb_raw}nimbus.sh"
+		urls="https://$base ${gh_proxy_mirror}https://$base"
 	else
-		urls="${gh_proxy_mirror}https://$base https://$base ${nb_cnb_raw}nimbus.sh"
+		urls="${gh_proxy_mirror}https://$base https://$base"
 	fi
 
 	tmp=$(mktemp ~/nimbus_tmp.XXXXXX) || return 1
@@ -8071,7 +8074,7 @@ echo -e "${gl_cyan}"
 echo "╔╗╔╦╔╦╗╔╗ ╦ ╦╔═╗"
 echo "║║║║║║║╠╩╗║ ║╚═╗"
 echo "╝╚╝╩╩ ╩╚═╝╚═╝╚═╝"
-echo -e "Nimbus · 云服务器工具箱 v$sh_v"
+echo -e "Nimbus · 云服务器工具箱 v$sh_v$([ "$nb_edition" = cnb ] && echo "（国内镜像版）")"
 echo -e "命令行输入${gl_huang}nb${gl_cyan}可快速启动${gl_bai}"
 if [ "$NB_FIRST_INSTALL" = true ]; then
 	echo -e "${gl_lv}已安装快捷命令 nb，脚本位于 ~/nimbus.sh${gl_bai}"
@@ -8191,7 +8194,7 @@ else
 			;;
 		self-update|selfupdate)
 			if nb_self_update; then
-				echo "Nimbus 已更新到 v${NB_SELF_UPDATE_INFO% *}（线路模式: ${NB_SELF_UPDATE_INFO#* }）"
+				echo "Nimbus 已更新到 v${NB_SELF_UPDATE_INFO% *}（线路模式: ${NB_SELF_UPDATE_INFO#* }$(grep -q '^nb_edition="cnb"' ~/nimbus.sh && echo "，国内镜像版")）"
 			else
 				echo "Nimbus 更新失败：下载出错或文件校验不通过，未做修改" >&2
 				exit 1

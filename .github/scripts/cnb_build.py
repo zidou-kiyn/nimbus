@@ -40,6 +40,9 @@ def strip_nimbus():
         fail("没有找到 xboard_node_menu 函数块")
     s = s[: m.start()] + s[m.end():]
 
+    # 标记为国内镜像版：菜单标题显示「国内镜像版」
+    s = replace_once(s, 'nb_edition="github"\n', 'nb_edition="cnb"\n', "版本来源 nb_edition")
+
     # 新机开荒：状态检测
     s = replace_once(
         s,
