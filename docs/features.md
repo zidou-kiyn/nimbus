@@ -103,14 +103,15 @@
 
 - **资源监控**：CPU、内存、硬盘使用率和出入站流量超过阈值时，推送 Telegram 告警；由 systemd 服务 `tg-check-notify` 托管，无 systemd 的系统用 crontab。
 - **SSH 登录提醒**：通过 `/etc/ssh/sshrc` 触发，每次 SSH 登录都会推送通知。
-- Bot Token、Chat ID 和阈值在菜单中交互填写，保存在 `/etc/nimbus/tg-notify.conf`（权限 0600）。旧版部署会自动迁移，菜单中也可一键卸载。
+- Bot Token、Chat ID 和阈值在菜单中交互填写，保存在 `/etc/nimbus/tg-notify.conf`（权限 0600）。
+- **话题群**：Chat ID 是开启了话题（Topics）的超级群时，可分别填写 SSH 登录提醒和资源告警的话题 ID（配置项 `SSH_THREAD_ID` / `MONITOR_THREAD_ID`），留空发到 General。旧版部署会自动迁移，菜单中也可一键卸载。
 
 ## 应用部署
 
 | 应用 | 入口 | 说明 |
 |---|---|---|
 | [Komari](https://github.com/komari-monitor/komari-agent) 探针 Agent | 开荒 21 | 填写面板地址、自动发现密钥和月流量重置日；国内机器默认通过加速镜像下载 |
-| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 22 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理 |
+| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 22 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理；已安装时菜单可一键更新 xwPF 脚本和 realm（国内机器走代理，不影响现有规则） |
 | [XBoard-node](https://github.com/Hei-XiaoHu/Xboard-Node) | 开荒 23 | 使用 cedar2025/Xboard-Node 的维护分支（内核升级与适配）。填写面板地址、Token、节点 ID，内核可选 xray（默认）或 sing-box；支持状态查看、升级、卸载；国内机器通过代理下载 |
 
 ## 文件与配置位置

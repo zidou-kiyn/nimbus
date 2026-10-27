@@ -25,11 +25,15 @@ for required in TELEGRAM_BOT_TOKEN CHAT_ID isp_info country masked_ip \
 done
 
 # 发送Telegram通知的函数（Token 经 stdin 传给 curl，不出现在进程参数中）
+# 配置了 MONITOR_THREAD_ID 时发到话题群的对应话题
 send_tg_notification() {
     local MESSAGE=$1
+    local -a thread_args=()
+    [ -n "${MONITOR_THREAD_ID:-}" ] && thread_args=(--data-urlencode "message_thread_id=${MONITOR_THREAD_ID}")
     printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" |
         curl -s -m 10 -X POST -K - \
             --data-urlencode "chat_id=${CHAT_ID}" \
+            "${thread_args[@]}" \
             --data-urlencode "text=${MESSAGE}" >/dev/null
 }
 

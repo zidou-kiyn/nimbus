@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.12"
+sh_v="1.2.13"
 
 
 gl_hui='\e[37m'
@@ -5131,10 +5131,13 @@ tg_notify_load_config() {
 	[ -f "$TG_NOTIFY_CONF" ] || return 1
 	local TELEGRAM_BOT_TOKEN="" CHAT_ID="" isp_info="" country="" masked_ip=""
 	local CPU_THRESHOLD="" MEMORY_THRESHOLD="" DISK_THRESHOLD="" NETWORK_THRESHOLD_GB=""
+	local SSH_THREAD_ID="" MONITOR_THREAD_ID=""
 	# shellcheck source=/dev/null
 	. "$TG_NOTIFY_CONF" 2>/dev/null || return 1
 	tg_old_token="$TELEGRAM_BOT_TOKEN"
 	tg_old_chat="$CHAT_ID"
+	tg_old_ssh_thread="$SSH_THREAD_ID"
+	tg_old_mon_thread="$MONITOR_THREAD_ID"
 	tg_old_isp="$isp_info"
 	tg_old_country="$country"
 	tg_old_masked="$masked_ip"
@@ -5329,6 +5332,75 @@ tg_notify_step_telegram() {
 	done
 }
 
+# 读取话题 ID：直接回车保留原值，输入 0 清空（不使用话题）
+tg_notify_read_thread() {
+	local __var="$1" prompt="$2" value
+	while true; do
+		read -r -e -p "$prompt [${!__var:-不使用}]: " value
+		value=$(printf '%s' "$value" | tr -d '[:space:]')
+		if [ -z "$value" ]; then
+			return 0
+		elif [ "$value" = "0" ]; then
+			printf -v "$__var" '%s' ""
+			return 0
+		elif [[ "$value" =~ ^[0-9]{1,10}$ ]]; then
+			printf -v "$__var" '%s' "$((10#$value))"
+			return 0
+		fi
+		echo -e "${gl_hong}输入无效${gl_bai}，话题 ID 是正整数，输入 0 表示不使用话题"
+	done
+}
+
+# 第 2 步补充：Chat ID 是超级群时，可把 SSH 登录提醒和资源告警分别发到不同话题（Topics）
+tg_notify_step_topic() {
+	local choice confirm resp desc text item label thread failed
+	tg_ssh_thread="" tg_mon_thread=""
+	[[ "$tg_chat" == -100* ]] || return 0
+	# 仍是原来的群时沿用原话题 ID
+	if [ "$tg_chat" = "$tg_old_chat" ]; then
+		tg_ssh_thread="$tg_old_ssh_thread"
+		tg_mon_thread="$tg_old_mon_thread"
+	fi
+	echo ""
+	echo -e "${gl_cyan}话题设置（可选）${gl_bai}"
+	echo "------------------------"
+	echo "群组开启了话题（Topics）时，可以把 SSH 登录提醒和资源告警分别发到不同话题"
+	echo -e "${gl_hui}话题 ID：在话题里任意消息上「复制消息链接」，t.me/c/<群>/<话题ID>/<消息ID> 中间那个数字${gl_bai}"
+	echo -e "${gl_hui}直接回车保留方括号中的值，输入 0 表示不使用话题（发到 General）${gl_bai}"
+	while true; do
+		tg_notify_read_thread tg_ssh_thread "SSH 登录提醒的话题 ID"
+		tg_notify_read_thread tg_mon_thread "资源告警的话题 ID"
+		[ -n "$tg_ssh_thread$tg_mon_thread" ] || return 0
+		failed=false
+		for item in "SSH 登录提醒:$tg_ssh_thread" "资源告警:$tg_mon_thread"; do
+			label="${item%%:*}"
+			thread="${item#*:}"
+			[ -n "$thread" ] || continue
+			text="✅ Nimbus 话题测试：${label}
+机器：${tg_isp}-${tg_country}-${tg_masked}"
+			resp=$(tg_notify_api "$tg_token" sendMessage -X POST --data-urlencode "chat_id=$tg_chat" \
+				--data-urlencode "message_thread_id=$thread" --data-urlencode "text=$text")
+			if [ "$(tg_notify_json "$resp" '.ok')" = "true" ]; then
+				echo -e "${gl_lv}已发送${gl_bai}测试消息到「${label}」话题 $thread"
+			else
+				desc=$(tg_notify_json "$resp" '.description // empty')
+				echo -e "${gl_hong}发送到「${label}」话题 $thread 失败${gl_bai}: ${desc:-未知错误}"
+				failed=true
+			fi
+		done
+		if [ "$failed" = false ]; then
+			read -r -e -p "测试消息是否出现在对应话题里？(Y/N): " confirm
+			[[ "$confirm" =~ ^[Yy]$ ]] && return 0
+		fi
+		read -r -e -p "1. 重新输入话题 ID    2. 不使用话题    0. 放弃 : " choice
+		case "$choice" in
+			1) ;;
+			2) tg_ssh_thread="" tg_mon_thread=""; return 0 ;;
+			*) return 1 ;;
+		esac
+	done
+}
+
 tg_notify_read_number() {
 	local __var="$1" prompt="$2" default="$3" min="$4" max="$5" value
 	while true; do
@@ -5380,6 +5452,10 @@ tg_notify_write_config() {
 		echo "MEMORY_THRESHOLD=$tg_mem"
 		echo "DISK_THRESHOLD=$tg_disk"
 		echo "NETWORK_THRESHOLD_GB=$tg_net"
+		echo ""
+		echo "# 话题群（Topics）的话题 ID，留空则发到 General 或私聊"
+		echo "SSH_THREAD_ID=$tg_ssh_thread"
+		echo "MONITOR_THREAD_ID=$tg_mon_thread"
 	} > "$tmp" || { rm -f "$tmp"; return 1; }
 	chown root:root "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$TG_NOTIFY_CONF"
 }
@@ -5606,8 +5682,8 @@ tg_notify_install() {
 	local confirm
 	install curl bc jq
 	tg_old_token="" tg_old_chat="" tg_old_isp="" tg_old_country="" tg_old_masked=""
-	tg_old_cpu="" tg_old_mem="" tg_old_disk="" tg_old_net=""
-	tg_token="" tg_chat="" tg_isp="" tg_country="" tg_masked=""
+	tg_old_cpu="" tg_old_mem="" tg_old_disk="" tg_old_net="" tg_old_ssh_thread="" tg_old_mon_thread=""
+	tg_token="" tg_chat="" tg_isp="" tg_country="" tg_masked="" tg_ssh_thread="" tg_mon_thread=""
 	tg_cpu="" tg_mem="" tg_disk="" tg_net=""
 	tg_notify_load_config
 	if [ -f "$TG_NOTIFY_CONF" ] && [ "$tg_cfg_loaded" != true ]; then
@@ -5618,6 +5694,7 @@ tg_notify_install() {
 	tg_notify_step_basic || { echo "已取消"; return 1; }
 	echo ""
 	tg_notify_step_telegram || { echo "已取消"; return 1; }
+	tg_notify_step_topic || { echo "已取消"; return 1; }
 	echo ""
 	tg_notify_step_threshold
 
@@ -5626,6 +5703,9 @@ tg_notify_install() {
 	echo "------------------------"
 	echo "Bot Token   : $(tg_notify_mask_token "$tg_token")"
 	echo "Chat ID     : $tg_chat"
+	if [[ "$tg_chat" == -100* ]]; then
+		echo "话题 ID     : SSH 登录提醒 ${tg_ssh_thread:-不使用}，资源告警 ${tg_mon_thread:-不使用}"
+	fi
 	echo -e "机器标识    : ${gl_huang}${tg_isp}-${tg_country}-${tg_masked}${gl_bai}"
 	echo "CPU 阈值    : ${tg_cpu}%"
 	echo "内存阈值    : ${tg_mem}%"
@@ -5685,6 +5765,7 @@ tg_notify_menu() {
 		echo "TG-bot监控预警"
 		echo "------------------------------------------------"
 		echo "配置 Telegram 机器人后，本机 CPU、内存、硬盘、流量超过阈值，或有 SSH 登录时，会向你推送通知"
+		echo "支持发到开启话题（Topics）的群组，SSH 登录提醒和资源告警可分别发到不同话题"
 		echo -e "${gl_hui}-关于流量，重启服务器将重新计算-${gl_bai}"
 		if [ -f "$TG_NOTIFY_CONF" ]; then
 			echo -e "当前状态: 已配置，资源监控 ${gl_huang}$(tg_notify_monitor_status)${gl_bai}"
@@ -6099,12 +6180,108 @@ komari_agent_menu() {
 # ---------------------------------------------------------------------------
 # Realm 端口转发（zywe03/realm-xwPF，管理命令 pf）
 # ---------------------------------------------------------------------------
+XWPF_REPO="raw.githubusercontent.com/zywe03/realm-xwPF/main"
+XWPF_DIR="/usr/local/bin"
+
+nb_realm_version() {
+	[ -x "$XWPF_DIR/realm" ] || return 1
+	"$XWPF_DIR/realm" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+}
+
+nb_xwpf_version() {
+	sed -n 's/^SCRIPT_VERSION="\{0,1\}v\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$XWPF_DIR/lib/core.sh" 2>/dev/null | head -1
+}
+
+# 更新 xwPF 脚本与 realm 主程序：全部经 nb_download 下载（国内机器自动走代理），规则与配置不动
+realm_xwpf_update() {
+	local tmp f ver_old ver_new realm_old realm_new arch was_active=false
+	local -a libs
+	tmp=$(mktemp -d) || return 1
+	echo "正在下载 xwPF 脚本..."
+	if ! nb_download "$XWPF_REPO/xwPF.sh" "$tmp/xwPF.sh" || ! head -1 "$tmp/xwPF.sh" | grep -q '^#!'; then
+		echo -e "${gl_hong}xwPF.sh 下载失败${gl_bai}"
+		rm -rf "$tmp"; return 1
+	fi
+	# 模块列表以新版入口脚本中的 LIB_FILES 为准
+	read -r -a libs <<< "$(sed -n 's/^LIB_FILES=(\(.*\))/\1/p' "$tmp/xwPF.sh" | tr -d '"')"
+	[ "${#libs[@]}" -gt 0 ] || libs=(core.sh rules.sh server.sh realm.sh ui.sh)
+	mkdir -p "$tmp/lib"
+	for f in "${libs[@]}"; do
+		if ! nb_download "$XWPF_REPO/lib/$f" "$tmp/lib/$f" || ! bash -n "$tmp/lib/$f" 2>/dev/null; then
+			echo -e "${gl_hong}lib/$f 下载失败${gl_bai}"
+			rm -rf "$tmp"; return 1
+		fi
+	done
+	ver_old=$(nb_xwpf_version)
+	mkdir -p "$XWPF_DIR/lib"
+	install -m 755 "$tmp/xwPF.sh" "$XWPF_DIR/xwPF.sh"
+	for f in "${libs[@]}"; do install -m 644 "$tmp/lib/$f" "$XWPF_DIR/lib/$f"; done
+	ln -sf "$XWPF_DIR/xwPF.sh" "$XWPF_DIR/pf"
+	ver_new=$(nb_xwpf_version)
+	echo -e "xwPF 脚本: ${ver_old:-未知} → ${gl_lv}${ver_new:-未知}${gl_bai}"
+
+	# realm 版本跟随 xwPF 中经过适配的 REALM_VERSION
+	realm_new=$(sed -n 's/^REALM_VERSION="v\{0,1\}\([0-9.]*\)"$/\1/p' "$XWPF_DIR/lib/core.sh" | head -1)
+	realm_old=$(nb_realm_version)
+	if [ -z "$realm_new" ]; then
+		echo -e "${gl_huang}未能读取 realm 目标版本，跳过 realm 更新${gl_bai}"
+	elif [ "$realm_old" = "$realm_new" ]; then
+		echo -e "realm: ${gl_lv}$realm_old 已是最新${gl_bai}"
+	else
+		case "$(uname -m)" in
+			x86_64) arch="x86_64-unknown-linux-musl" ;;
+			aarch64) arch="aarch64-unknown-linux-musl" ;;
+			armv7l|arm) arch="armv7-unknown-linux-musleabihf" ;;
+			*) echo -e "${gl_hong}不支持的架构 $(uname -m)，跳过 realm 更新${gl_bai}"; rm -rf "$tmp"; return 1 ;;
+		esac
+		echo "正在下载 realm v$realm_new..."
+		if nb_download "github.com/zhboner/realm/releases/download/v$realm_new/realm-$arch.tar.gz" "$tmp/realm.tar.gz" &&
+			tar -xzf "$tmp/realm.tar.gz" -C "$tmp" realm 2>/dev/null &&
+			"$tmp/realm" --version 2>/dev/null | grep -q "$realm_new"; then
+			nb_service_active realm && was_active=true
+			[ "$was_active" = true ] && systemctl stop realm
+			[ -f "$XWPF_DIR/realm" ] && cp -p "$XWPF_DIR/realm" "$XWPF_DIR/realm.bak"
+			install -m 755 "$tmp/realm" "$XWPF_DIR/realm"
+			[ "$was_active" = true ] && systemctl start realm
+			echo -e "realm: ${realm_old:-未安装} → ${gl_lv}$(nb_realm_version)${gl_bai}（旧版本备份为 $XWPF_DIR/realm.bak）"
+			if [ "$was_active" = true ]; then
+				sleep 1
+				if nb_service_active realm; then
+					echo -e "realm 服务: ${gl_lv}运行中${gl_bai}"
+				else
+					echo -e "realm 服务: ${gl_hong}启动失败${gl_bai}，可用 pf 查看日志，或把 $XWPF_DIR/realm.bak 改回 realm"
+				fi
+			fi
+		else
+			echo -e "${gl_hong}realm 下载或校验失败${gl_bai}，未做改动"
+		fi
+	fi
+	rm -rf "$tmp"
+}
+
 realm_xwpf() {
 	root_use
 	local choice tmp
-	if command -v pf >/dev/null 2>&1; then
-		pf
-		return
+	if [ -x "$XWPF_DIR/xwPF.sh" ] && [ -f "$XWPF_DIR/lib/core.sh" ]; then
+		while true; do
+			clear
+			echo "Realm 端口转发（xwPF）"
+			echo "------------------------------------------------"
+			echo -e "xwPF 脚本: ${gl_huang}$(nb_xwpf_version)${gl_bai}    realm: ${gl_huang}$(nb_realm_version || echo 未安装)${gl_bai}    服务: $(nb_service_active realm && echo -e "${gl_lv}运行中${gl_bai}" || echo -e "${gl_hui}未运行${gl_bai}")"
+			echo -e "${gl_hui}项目地址: https://github.com/zywe03/realm-xwPF${gl_bai}"
+			echo "------------------------------------------------"
+			echo "1. 管理转发规则（pf）"
+			echo "2. 更新 xwPF 脚本和 realm（国内机器自动走代理，不影响现有规则）"
+			echo "------------------------------------------------"
+			echo "0. 返回上一级选单"
+			echo "------------------------------------------------"
+			read -r -e -p "请输入你的选择: " choice
+			case "$choice" in
+				1) pf ;;
+				2) realm_xwpf_update; break_end ;;
+				*) return ;;
+			esac
+		done
 	fi
 	clear
 	echo "Realm 端口转发（xwPF）"
@@ -6116,7 +6293,7 @@ realm_xwpf() {
 	[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; return; }
 	install curl wget
 	tmp=$(mktemp)
-	if nb_download raw.githubusercontent.com/zywe03/realm-xwPF/main/xwPF.sh "$tmp" && head -1 "$tmp" | grep -q '^#!'; then
+	if nb_download "$XWPF_REPO/xwPF.sh" "$tmp" && head -1 "$tmp" | grep -q '^#!'; then
 		bash "$tmp" install
 	else
 		echo -e "${gl_hong}安装脚本下载失败${gl_bai}"

@@ -124,3 +124,8 @@ XBoard-node 改用 Hei-XiaoHu/Xboard-Node。
 3.阿里云、腾讯云机器（按 DMI 信息识别）打开菜单时提示推荐选 4：内网 DNS 延迟最低，也不受公网波动影响。
 4.原来 /etc/resolv.conf 是链接时，选 1 / 2 改为替换成普通文件，不再写进 systemd-resolved 的临时文件；备份文件名不再重复；「当前 DNS 地址」不再显示注释。
 ------------------------
+2026-10-28   v1.2.13
+TG-bot 监控预警支持话题群；Realm 端口转发新增一键更新。
+1.TG-bot 监控预警：Chat ID 是开启了话题（Topics）的超级群（-100 开头）时，新增「话题设置」：SSH 登录提醒和资源告警可分别发到不同话题，填写后会向每个话题发送测试消息确认。话题 ID 保存为配置文件中的 SSH_THREAD_ID / MONITOR_THREAD_ID，留空则和以前一样发到 General 或私聊；旧配置文件无需改动。
+2.Realm 端口转发：已安装 xwPF 时，菜单改为「管理转发规则（pf）」和「更新 xwPF 脚本和 realm」，并显示当前版本与服务状态。xwPF 自带的更新直连 GitHub，国内机器会卡住或失败；新的更新全部走 Nimbus 的下载通道（国内自动用代理），realm 版本跟随 xwPF 中适配过的 REALM_VERSION，更新时自动停启服务，旧程序备份为 /usr/local/bin/realm.bak，转发规则和配置不受影响。
+------------------------

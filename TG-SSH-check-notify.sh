@@ -28,8 +28,13 @@ MESSAGE="ℹ️ 登录信息：
 登录时间：$TIME
 登录地区：$LOCATION"
 
+# 配置了 SSH_THREAD_ID 时发到话题群的对应话题
+thread_args=()
+[ -n "${SSH_THREAD_ID:-}" ] && thread_args=(--data-urlencode "message_thread_id=${SSH_THREAD_ID}")
+
 # Token 经 stdin 传给 curl，不出现在进程参数中
 printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" |
     curl -s -m 10 -X POST -K - \
         --data-urlencode "chat_id=${CHAT_ID}" \
+        "${thread_args[@]}" \
         --data-urlencode "text=${MESSAGE}" >/dev/null 2>&1
