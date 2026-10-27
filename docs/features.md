@@ -122,6 +122,7 @@ nimbus/
 ├── archive.key               XanMod 仓库签名备用密钥
 ├── res/config/               fail2ban 规则（CentOS 系）、tmux / ble.sh 推荐配置
 ├── docs/                     文档
+├── .pi/                      开发用 pi skill（功能开发 / 上游同步）与上游同步记录
 └── assets/                   README 资源
 ```
 
