@@ -111,7 +111,7 @@
 | 应用 | 入口 | 说明 |
 |---|---|---|
 | [Komari](https://github.com/komari-monitor/komari-agent) 探针 Agent | 开荒 21 | 填写面板地址、自动发现密钥和月流量重置日；国内机器默认通过加速镜像下载 |
-| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 22 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理；已安装时菜单可一键更新 xwPF 脚本和 realm（国内机器走代理，不影响现有规则） |
+| [Realm](https://github.com/zywe03/realm-xwPF) 端口转发 | 开荒 22 / 基础工具 18 | 安装 xwPF，之后用 `pf` 命令管理；安装和更新都由 Nimbus 下载 xwPF 脚本和 realm（国内机器走代理），已安装时菜单可一键更新，不影响现有规则 |
 | [XBoard-node](https://github.com/Hei-XiaoHu/Xboard-Node) | 开荒 23 | 使用 cedar2025/Xboard-Node 的维护分支（内核升级与适配）。填写面板地址、Token、节点 ID，内核可选 xray（默认）或 sing-box；支持状态查看、升级、卸载；国内机器通过代理下载 |
 
 ## 文件与配置位置

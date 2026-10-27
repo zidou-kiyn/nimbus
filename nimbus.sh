@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.17"
+sh_v="1.2.18"
 
 
 gl_hui='\e[37m'
@@ -6380,76 +6380,120 @@ nb_xwpf_version() {
 	sed -n 's/^SCRIPT_VERSION="\{0,1\}v\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$XWPF_DIR/lib/core.sh" 2>/dev/null | head -1
 }
 
-# 更新 xwPF 脚本与 realm 主程序：全部经 nb_download 下载（国内机器自动走代理），规则与配置不动
-realm_xwpf_update() {
-	local tmp f ver_old ver_new realm_old realm_new arch was_active=false
+# 下载并安装 xwPF 入口脚本和模块（经 nb_download，国内机器自动走代理）；参数为临时目录
+realm_xwpf_fetch_scripts() {
+	local tmp="$1" f
 	local -a libs
-	tmp=$(mktemp -d) || return 1
 	echo "正在下载 xwPF 脚本..."
 	if ! nb_download "$XWPF_REPO/xwPF.sh" "$tmp/xwPF.sh" || ! head -1 "$tmp/xwPF.sh" | grep -q '^#!'; then
 		echo -e "${gl_hong}xwPF.sh 下载失败${gl_bai}"
-		rm -rf "$tmp"; return 1
+		return 1
 	fi
-	# 模块列表以新版入口脚本中的 LIB_FILES 为准
+	# 模块列表以入口脚本中的 LIB_FILES 为准
 	read -r -a libs <<< "$(sed -n 's/^LIB_FILES=(\(.*\))/\1/p' "$tmp/xwPF.sh" | tr -d '"')"
 	[ "${#libs[@]}" -gt 0 ] || libs=(core.sh rules.sh server.sh realm.sh ui.sh)
 	mkdir -p "$tmp/lib"
 	for f in "${libs[@]}"; do
 		if ! nb_download "$XWPF_REPO/lib/$f" "$tmp/lib/$f" || ! bash -n "$tmp/lib/$f" 2>/dev/null; then
 			echo -e "${gl_hong}lib/$f 下载失败${gl_bai}"
-			rm -rf "$tmp"; return 1
+			return 1
 		fi
 	done
-	ver_old=$(nb_xwpf_version)
 	mkdir -p "$XWPF_DIR/lib"
 	install -m 755 "$tmp/xwPF.sh" "$XWPF_DIR/xwPF.sh"
 	for f in "${libs[@]}"; do install -m 644 "$tmp/lib/$f" "$XWPF_DIR/lib/$f"; done
 	ln -sf "$XWPF_DIR/xwPF.sh" "$XWPF_DIR/pf"
-	ver_new=$(nb_xwpf_version)
-	echo -e "xwPF 脚本: ${ver_old:-未知} → ${gl_lv}${ver_new:-未知}${gl_bai}"
+}
 
-	# realm 版本跟随 xwPF 中经过适配的 REALM_VERSION
-	realm_new=$(sed -n 's/^REALM_VERSION="v\{0,1\}\([0-9.]*\)"$/\1/p' "$XWPF_DIR/lib/core.sh" | head -1)
+# xwPF 适配过的 realm 版本（core.sh 中的 REALM_VERSION，不带 v）
+realm_xwpf_target_version() {
+	sed -n 's/^REALM_VERSION="v\{0,1\}\([0-9.]*\)"$/\1/p' "$XWPF_DIR/lib/core.sh" 2>/dev/null | head -1
+}
+
+# 下载 realm 压缩包并校验版本：realm_xwpf_fetch_realm <版本> <保存路径>
+realm_xwpf_fetch_realm() {
+	local ver="$1" dest="$2" arch dir
+	case "$(uname -m)" in
+		x86_64) arch="x86_64-unknown-linux-musl" ;;
+		aarch64) arch="aarch64-unknown-linux-musl" ;;
+		armv7l|arm) arch="armv7-unknown-linux-musleabihf" ;;
+		*) echo -e "${gl_hong}不支持的架构 $(uname -m)${gl_bai}"; return 1 ;;
+	esac
+	echo "正在下载 realm v$ver..."
+	dir=$(dirname "$dest")
+	if nb_download "github.com/zhboner/realm/releases/download/v$ver/realm-$arch.tar.gz" "$dest" &&
+		tar -xzf "$dest" -C "$dir" realm 2>/dev/null &&
+		"$dir/realm" --version 2>/dev/null | grep -q "$ver"; then
+		return 0
+	fi
+	echo -e "${gl_hong}realm 下载或校验失败${gl_bai}"
+	return 1
+}
+
+# 更新 xwPF 脚本与 realm 主程序，规则与配置不动
+realm_xwpf_update() {
+	local tmp ver_old realm_old realm_new was_active=false
+	tmp=$(mktemp -d) || return 1
+	ver_old=$(nb_xwpf_version)
+	realm_xwpf_fetch_scripts "$tmp" || { rm -rf "$tmp"; return 1; }
+	echo -e "xwPF 脚本: ${ver_old:-未知} → ${gl_lv}$(nb_xwpf_version)${gl_bai}"
+
+	realm_new=$(realm_xwpf_target_version)
 	realm_old=$(nb_realm_version)
 	if [ -z "$realm_new" ]; then
 		echo -e "${gl_huang}未能读取 realm 目标版本，跳过 realm 更新${gl_bai}"
 	elif [ "$realm_old" = "$realm_new" ]; then
 		echo -e "realm: ${gl_lv}$realm_old 已是最新${gl_bai}"
-	else
-		case "$(uname -m)" in
-			x86_64) arch="x86_64-unknown-linux-musl" ;;
-			aarch64) arch="aarch64-unknown-linux-musl" ;;
-			armv7l|arm) arch="armv7-unknown-linux-musleabihf" ;;
-			*) echo -e "${gl_hong}不支持的架构 $(uname -m)，跳过 realm 更新${gl_bai}"; rm -rf "$tmp"; return 1 ;;
-		esac
-		echo "正在下载 realm v$realm_new..."
-		if nb_download "github.com/zhboner/realm/releases/download/v$realm_new/realm-$arch.tar.gz" "$tmp/realm.tar.gz" &&
-			tar -xzf "$tmp/realm.tar.gz" -C "$tmp" realm 2>/dev/null &&
-			"$tmp/realm" --version 2>/dev/null | grep -q "$realm_new"; then
-			nb_service_active realm && was_active=true
-			[ "$was_active" = true ] && systemctl stop realm
-			[ -f "$XWPF_DIR/realm" ] && cp -p "$XWPF_DIR/realm" "$XWPF_DIR/realm.bak"
-			install -m 755 "$tmp/realm" "$XWPF_DIR/realm"
-			[ "$was_active" = true ] && systemctl start realm
-			echo -e "realm: ${realm_old:-未安装} → ${gl_lv}$(nb_realm_version)${gl_bai}（旧版本备份为 $XWPF_DIR/realm.bak）"
-			if [ "$was_active" = true ]; then
-				sleep 1
-				if nb_service_active realm; then
-					echo -e "realm 服务: ${gl_lv}运行中${gl_bai}"
-				else
-					echo -e "realm 服务: ${gl_hong}启动失败${gl_bai}，可用 pf 查看日志，或把 $XWPF_DIR/realm.bak 改回 realm"
-				fi
+	elif realm_xwpf_fetch_realm "$realm_new" "$tmp/realm.tar.gz"; then
+		nb_service_active realm && was_active=true
+		[ "$was_active" = true ] && systemctl stop realm
+		[ -f "$XWPF_DIR/realm" ] && cp -p "$XWPF_DIR/realm" "$XWPF_DIR/realm.bak"
+		install -m 755 "$tmp/realm" "$XWPF_DIR/realm"
+		[ "$was_active" = true ] && systemctl start realm
+		echo -e "realm: ${realm_old:-未安装} → ${gl_lv}$(nb_realm_version)${gl_bai}（旧版本备份为 $XWPF_DIR/realm.bak）"
+		if [ "$was_active" = true ]; then
+			sleep 1
+			if nb_service_active realm; then
+				echo -e "realm 服务: ${gl_lv}运行中${gl_bai}"
+			else
+				echo -e "realm 服务: ${gl_hong}启动失败${gl_bai}，可用 pf 查看日志，或把 $XWPF_DIR/realm.bak 改回 realm"
 			fi
-		else
-			echo -e "${gl_hong}realm 下载或校验失败${gl_bai}，未做改动"
 		fi
+	else
+		echo "realm 未做改动"
 	fi
+	rm -rf "$tmp"
+}
+
+# 首次安装：脚本和 realm 压缩包都由 Nimbus 下载（国内走代理），再交给 xwPF 自己的安装流程；
+# xwPF 的「离线安装」选项读取本地压缩包，不再直连 GitHub，配置与服务仍由 xwPF 生成
+realm_xwpf_install() {
+	local tmp ver entry
+	tmp=$(mktemp -d) || return 1
+	realm_xwpf_fetch_scripts "$tmp" || { rm -rf "$tmp"; return 1; }
+	ver=$(realm_xwpf_target_version)
+	if [ -z "$ver" ] || ! realm_xwpf_fetch_realm "$ver" "$tmp/realm.tar.gz"; then
+		rm -rf "$tmp"
+		return 1
+	fi
+	# 取入口脚本中主入口 case 之前的部分（变量与 _load_libs），跳过会直连 GitHub 的 _bootstrap
+	entry="$tmp/xwpf-entry.sh"
+	sed '/^case "\${1:-}" in/,$d' "$XWPF_DIR/xwPF.sh" > "$entry"
+	if ! grep -q '^_load_libs()' "$entry"; then
+		echo -e "${gl_hong}xwPF 入口脚本结构已变化，无法离线安装${gl_bai}"
+		rm -rf "$tmp"
+		return 1
+	fi
+	echo "开始安装 realm（xwPF 会查询一次 GitHub 上的最新版本，国内机器约等待 10 秒后自动继续）"
+	# 唯一的交互是「离线安装 realm 输入完整路径」，传入已下载的压缩包
+	printf '%s\n' "$tmp/realm.tar.gz" |
+		bash -c '. "$1" && _load_libs && _SKIP_SCRIPT_UPDATE=1 smart_install' _ "$entry"
 	rm -rf "$tmp"
 }
 
 realm_xwpf() {
 	root_use
-	local choice tmp
+	local choice
 	if [ -x "$XWPF_DIR/xwPF.sh" ] && [ -f "$XWPF_DIR/lib/core.sh" ]; then
 		while true; do
 			clear
@@ -6479,15 +6523,13 @@ realm_xwpf() {
 	echo "------------------------------------------------"
 	read -r -e -p "确定安装吗？(Y/N): " choice
 	[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; return; }
-	install curl wget
-	tmp=$(mktemp)
-	if nb_download "$XWPF_REPO/xwPF.sh" "$tmp" && head -1 "$tmp" | grep -q '^#!'; then
-		bash "$tmp" install
+	install curl wget tar bc jq
+	realm_xwpf_install
+	if [ -x "$XWPF_DIR/realm" ] && command -v pf >/dev/null 2>&1; then
+		echo -e "${gl_lv}安装完成，以后输入 ${gl_huang}pf${gl_lv} 管理转发规则${gl_bai}"
 	else
-		echo -e "${gl_hong}安装脚本下载失败${gl_bai}"
+		echo -e "${gl_hong}安装未完成${gl_bai}，请检查上面的输出"
 	fi
-	rm -f "$tmp"
-	command -v pf >/dev/null 2>&1 && echo -e "${gl_lv}安装完成，以后输入 ${gl_huang}pf${gl_lv} 管理转发规则${gl_bai}"
 }
 
 # ---------------------------------------------------------------------------
