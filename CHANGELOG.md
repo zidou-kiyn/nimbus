@@ -161,3 +161,9 @@ Realm 端口转发：无国际出口的国内机器也能首次安装。
 3.realm 版本取 xwPF 中适配过的 REALM_VERSION。xwPF 安装时仍会查询一次 GitHub 上的最新版本，国内机器会等待约 10 秒后自动使用该版本继续。
 4.安装和「更新 xwPF 脚本和 realm」改为共用同一套下载代码。
 ------------------------
+2026-10-28   v1.2.19
+修复开启密钥登录 / 切换密码登录后 SSH 端口被改回 22。
+1.原因：开启密钥登录、切换回密码登录（含新机开荒第 2 步修改 root 密码）时会删除 /etc/ssh/sshd_config.d/ 下的全部文件，而 DD 脚本（bin456789/reinstall）和部分云镜像把 SSH 端口写在这里，删掉后端口回到 22，按原端口就连不上了。还会顺带删掉 SSH 客户端的 /etc/ssh/ssh_config.d/。
+2.现在只把 sshd_config.d 中与登录方式有关的设置（PermitRootLogin、PasswordAuthentication、PubkeyAuthentication、ChallengeResponseAuthentication、KbdInteractiveAuthentication）注释掉，标记为「# [nimbus 已停用]」，端口等其他配置保留；不再动 ssh_config.d。
+3.已受影响的机器：用原来的 22 端口登录，再用 nb 修改 SSH 端口（新机开荒第 13 步）改回原端口。
+------------------------

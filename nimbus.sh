@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.18"
+sh_v="1.2.19"
 
 
 gl_hui='\e[37m'
@@ -2169,6 +2169,16 @@ done
 # - Ubuntu 22.10+ 默认由 ssh.socket 监听端口：需 daemon-reload 让生成器按 sshd_config 重新生成监听地址，
 #   再重启 ssh.socket 与 ssh.service（已有会话不会断开，ssh.service 为 KillMode=process）
 # - Debian/Ubuntu 的服务名是 ssh，RHEL/Fedora 是 sshd，Alpine 用 OpenRC
+# 注释掉 /etc/ssh/sshd_config.d/*.conf 中与登录方式有关的设置：云镜像常自带 PasswordAuthentication 等，
+# 且 Include 在主配置开头，会抢先生效。端口等其他配置保留（以前直接删除整个目录，会丢掉 DD 时设置的 SSH 端口）
+nb_sshd_dropin_neutralize() {
+	local f
+	for f in /etc/ssh/sshd_config.d/*.conf; do
+		[ -f "$f" ] || continue
+		sed -i -E 's/^([[:space:]]*(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|ChallengeResponseAuthentication|KbdInteractiveAuthentication)[[:space:]].*)$/# [nimbus 已停用] \1/I' "$f"
+	done
+}
+
 restart_ssh() {
 	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 		if systemctl is-active --quiet ssh.socket 2>/dev/null || systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
@@ -2212,7 +2222,7 @@ correct_ssh_config() {
 			   -e 's/^\s*#\?\s*PubkeyAuthentication .*/PubkeyAuthentication yes/' "$sshd_config"
 	fi
 
-	rm -rf /etc/ssh/sshd_config.d/* /etc/ssh/ssh_config.d/*
+	nb_sshd_dropin_neutralize
 }
 
 
@@ -2299,7 +2309,7 @@ sshkey_on() {
 		   -e 's/^\s*#\?\s*PasswordAuthentication .*/PasswordAuthentication no/' \
 		   -e 's/^\s*#\?\s*PubkeyAuthentication .*/PubkeyAuthentication yes/' \
 		   -e 's/^\s*#\?\s*ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
-	rm -rf /etc/ssh/sshd_config.d/* /etc/ssh/ssh_config.d/*
+	nb_sshd_dropin_neutralize
 	restart_ssh
 	echo -e "${gl_lv}用户密钥登录模式已开启，已关闭密码登录模式，重连将会生效${gl_bai}"
 
@@ -2579,7 +2589,7 @@ add_sshpasswd() {
 	fi
 
 	sed -i 's/^\s*#\?\s*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config
-	rm -rf /etc/ssh/sshd_config.d/* /etc/ssh/ssh_config.d/*
+	nb_sshd_dropin_neutralize
 
 	restart_ssh
 
