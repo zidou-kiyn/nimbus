@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.9"
+sh_v="1.2.10"
 
 
 gl_hui='\e[37m'
@@ -119,7 +119,7 @@ nb_migrate_update_cron
 ip_address() {
 
 get_public_ip() {
-	curl -s https://ipinfo.io/ip && echo
+	curl -s --connect-timeout 3 -m 5 https://ipinfo.io/ip && echo
 }
 
 get_local_ip() {
@@ -327,7 +327,7 @@ nimbus_home() {
 
 install_add_docker_cn() {
 
-local country=$(curl -s ipinfo.io/country)
+local country=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country)
 if [ "$country" = "CN" ]; then
 	cat > /etc/docker/daemon.json << EOF
 {
@@ -364,7 +364,7 @@ restart docker
 
 linuxmirrors_install_docker() {
 
-local country=$(curl -s ipinfo.io/country)
+local country=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country)
 if [ "$country" = "CN" ]; then
 	bash <(curl -sSL https://linuxmirrors.cn/docker.sh) \
 	  --source mirrors.huaweicloud.com/docker-ce \
@@ -1883,30 +1883,41 @@ sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
 }
 
 
+# 写入 DNS（参数取自调用方的 dns1_ipv4 等变量）。按默认路由判断 IPv4/IPv6，不查公网 IP（无国际出口时会卡住）；
+# 写入后验证解析，不通则还原原配置（例如国内无国际出口的机器选了国外 DNS）
 set_dns() {
+	local conf=/etc/resolv.conf bak was_immutable=false
+	lsattr "$conf" 2>/dev/null | awk '{print $1}' | grep -q i && was_immutable=true
+	bak="$conf.bak.$(date +%Y%m%d-%H%M%S)"
+	chattr -i "$conf" 2>/dev/null
+	cat "$conf" > "$bak" 2>/dev/null
 
-ip_address
+	{
+		if [ -n "$(ip -4 route show default 2>/dev/null)" ]; then
+			echo "nameserver $dns1_ipv4"
+			echo "nameserver $dns2_ipv4"
+		fi
+		if [ -n "$(ip -6 route show default 2>/dev/null)" ]; then
+			echo "nameserver $dns1_ipv6"
+			echo "nameserver $dns2_ipv6"
+		fi
+	} > "$conf"
+	if [ ! -s "$conf" ]; then
+		echo "nameserver $dns1_ipv4" >> "$conf"
+		echo "nameserver $dns2_ipv4" >> "$conf"
+	fi
 
-chattr -i /etc/resolv.conf
-> /etc/resolv.conf
-
-if [ -n "$ipv4_address" ]; then
-	echo "nameserver $dns1_ipv4" >> /etc/resolv.conf
-	echo "nameserver $dns2_ipv4" >> /etc/resolv.conf
-fi
-
-if [ -n "$ipv6_address" ]; then
-	echo "nameserver $dns1_ipv6" >> /etc/resolv.conf
-	echo "nameserver $dns2_ipv6" >> /etc/resolv.conf
-fi
-
-if [ ! -s /etc/resolv.conf ]; then
-	echo "nameserver 223.5.5.5" >> /etc/resolv.conf
-	echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-fi
-
-chattr +i /etc/resolv.conf
-
+	echo "正在验证 DNS 解析..."
+	if command -v getent >/dev/null 2>&1 &&
+		! RES_OPTIONS="timeout:2 attempts:1" timeout 15 getent ahosts www.qq.com >/dev/null 2>&1 &&
+		! RES_OPTIONS="timeout:2 attempts:1" timeout 15 getent ahosts www.baidu.com >/dev/null 2>&1; then
+		cat "$bak" > "$conf"
+		[ "$was_immutable" = true ] && chattr +i "$conf" 2>/dev/null
+		echo -e "${gl_hong}新的 DNS 无法解析域名，已还原原配置${gl_bai}（本机可能无法访问这些 DNS 服务器，国内机器请选国内 DNS）"
+		return 1
+	fi
+	chattr +i "$conf" 2>/dev/null
+	echo -e "${gl_lv}DNS 已更新${gl_bai}（原配置备份在 $bak）"
 }
 
 
@@ -1939,6 +1950,7 @@ while true; do
 		local dns1_ipv6="2606:4700:4700::1111"
 		local dns2_ipv6="2001:4860:4860::8888"
 		set_dns
+		break_end
 		;;
 	  2)
 		local dns1_ipv4="223.5.5.5"
@@ -1946,6 +1958,7 @@ while true; do
 		local dns1_ipv6="2400:3200::1"
 		local dns2_ipv6="2400:da00::6666"
 		set_dns
+		break_end
 		;;
 	  3)
 		install nano
@@ -3423,7 +3436,7 @@ linux_info() {
 
 	local disk_info=$(df -h | awk '$NF=="/"{printf "%s/%s (%s)", $3, $2, $5}')
 
-	local ipinfo=$(curl -s ipinfo.io)
+	local ipinfo=$(curl -s --connect-timeout 3 -m 5 ipinfo.io)
 	local country=$(echo "$ipinfo" | grep 'country' | awk -F': ' '{print $2}' | tr -d '",')
 	local city=$(echo "$ipinfo" | grep 'city' | awk -F': ' '{print $2}' | tr -d '",')
 	local isp_info=$(echo "$ipinfo" | grep 'org' | awk -F': ' '{print $2}' | tr -d '",')
@@ -4535,7 +4548,7 @@ switch_mirror() {
 
 	# 获取用户国家
 	local country
-	country=$(curl -s ipinfo.io/country)
+	country=$(curl -s --connect-timeout 3 -m 5 ipinfo.io/country)
 
 	echo "检测到国家：$country"
 
