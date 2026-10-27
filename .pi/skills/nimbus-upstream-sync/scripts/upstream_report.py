@@ -6,7 +6,8 @@
   python3 .pi/skills/nimbus-upstream-sync/scripts/upstream_report.py --no-fetch
   python3 .pi/skills/nimbus-upstream-sync/scripts/upstream_report.py --since <sha>
 
-审查基线读取 .pi/upstream-sync.md 中的 `last_reviewed: <sha>` 行。
+审查基线默认是 git merge-base HEAD upstream/main：每次审查完都会用 git merge -s ours 把审过的上游提交
+标记为已合入（不改任何文件），所以 merge-base 就是「已审查到的位置」，GitHub 上的 behind 计数也会归零。
 """
 import argparse
 import pathlib
@@ -15,7 +16,6 @@ import subprocess
 import sys
 
 root = pathlib.Path(__file__).resolve().parents[4]
-LEDGER = root / ".pi" / "upstream-sync.md"
 UP = "upstream/main"
 # 上游文件 → nimbus 文件；未列出且路径相同的文件按同名处理
 FILE_MAP = {"kejilion.sh": "nimbus.sh"}
@@ -52,12 +52,7 @@ def main():
 
     if not a.no_fetch:
         git("fetch", "--quiet", "--no-tags", "upstream")
-    since = a.since
-    if not since:
-        m = re.search(r"^last_reviewed:\s*([0-9a-f]{7,40})", LEDGER.read_text(encoding="utf-8"), re.M) if LEDGER.exists() else None
-        if not m:
-            sys.exit(f"{LEDGER} 中没有 last_reviewed 行，请用 --since 指定基线")
-        since = m.group(1)
+    since = a.since or git("merge-base", "HEAD", UP).strip()
 
     nimbus_src = (root / "nimbus.sh").read_text(encoding="utf-8")
     nimbus_funcs = {fn for _, fn in func_starts(nimbus_src)}

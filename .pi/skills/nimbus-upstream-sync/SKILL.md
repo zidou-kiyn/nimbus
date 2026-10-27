@@ -7,9 +7,10 @@ description: 审查上游 kejilion/sh 自上次同步以来的新提交，逐个
 
 Nimbus 从 kejilion/sh 的 `5edce6d` 分出，之后删掉了大半功能（KPanel、LDNMP、AI/Harness、多语言等），菜单和许多函数也重写了。所以：
 
-- **绝对不要 `git merge` / `git rebase` / `git cherry-pick` 上游**：会带回大量已删除的文件，`kejilion.sh` 和 `nimbus.sh` 也对不上。只能逐个审查后**手动移植**。
+- **绝对不要真正合并上游**（普通 `git merge` / `git rebase` / `git cherry-pick`）：会带回大量已删除的文件，`kejilion.sh` 和 `nimbus.sh` 也对不上。只能逐个审查后**手动移植**。
+- 唯一允许的合并是第 5 步的 **`git merge -s ours`**：只在历史上把审过的提交记为已合入，文件一行不变。它让 GitHub 上 fork 的「N commits behind」归零，也让 `git merge-base HEAD upstream/main` 成为审查基线。
 - 上游的 `kejilion.sh` 对应 nimbus 的 `nimbus.sh`；`TG-*.sh`、`Limiting_Shut_down1.sh`、`archive.key`、`LICENSE` 是同名文件；`cn/ en/ jp/ …` 多语言版、`tests/`、`apps/`、`*_manager.sh`、`kejilion_sh_log.txt` 在 nimbus 中都不存在。
-- 审查进度记在 `.pi/upstream-sync.md`：`last_reviewed:` 行是基线，表格是每个提交的结论。
+- 审查基线 = `git merge-base HEAD upstream/main`；每个提交的结论记在 `.pi/upstream-sync.md` 的表格里。
 
 用户在本 skill 后面附加的话（例如「只看 fail2ban 相关」「审到 xxx 为止」）优先执行。
 
@@ -19,7 +20,7 @@ Nimbus 从 kejilion/sh 的 `5edce6d` 分出，之后删掉了大半功能（KPan
 python3 .pi/skills/nimbus-upstream-sync/scripts/upstream_report.py
 ```
 
-脚本会 `git fetch --no-tags upstream`，列出 `last_reviewed..upstream/main` 中所有非合并提交。每个提交给出：改动了 nimbus 仍有的哪些函数（带行数）、已删除的函数、nimbus 没有的文件，以及一个初步判断。
+脚本会 `git fetch --no-tags upstream`，列出 `merge-base..upstream/main` 中所有非合并提交（`--since <sha>` 可手动指定基线）。每个提交给出：改动了 nimbus 仍有的哪些函数（带行数）、已删除的函数、nimbus 没有的文件，以及一个初步判断。
 
 没有新提交就直接告诉用户，结束。
 
@@ -64,9 +65,17 @@ git log --format='%h %s' -L '/^函数名() {/,/^}/:nimbus.sh' | grep -v '^$' | h
 
 ## 第 5 步：更新记录并提交
 
-1. 在 `.pi/upstream-sync.md` 的表格末尾按时间顺序追加本次审查的每个提交（不适用的同类提交可以合并成一行，但所有 sha 都要列出），并把 `last_reviewed:` 改成本次审查到的最后一个上游提交的**完整 sha**（`git rev-parse <sha>`）。
-2. 只更新了记录：提交信息写 `上游同步：审查至 <短 sha>，均不适用`。有移植：和代码改动一起提交，提交信息按 nimbus-dev 的格式（带版本号），末尾补一句「审查至上游 <短 sha>」。
-3. 推送前按 nimbus-dev 的规则先确认。
+1. 在 `.pi/upstream-sync.md` 的表格末尾按时间顺序追加本次审查的每个提交（不适用的同类提交可以合并成一行，但所有 sha 都要列出）。
+2. 提交记录（以及移植的代码）。只更新了记录：提交信息写 `上游同步：审查至 <短 sha>，均不适用`。有移植：提交信息按 nimbus-dev 的格式（带版本号），末尾补一句「审查至上游 <短 sha>」。
+3. **标记已审查**（工作区必须干净）：
+   ```bash
+   before=$(git rev-parse HEAD^{tree})
+   git merge -s ours --no-ff <审查到的上游 sha，通常是 upstream/main> -m "上游同步：标记已审查至 <短 sha>（-s ours，仅记录历史，不合并任何内容）"
+   [ "$before" = "$(git rev-parse HEAD^{tree})" ] && echo 文件未变   # 必须输出「文件未变」，否则立即 git reset --hard HEAD^ 并报告
+   git rev-list --left-right --count HEAD...upstream/main          # 右边应为 0（只审了一部分时为剩余数量）
+   ```
+   用户要求「审到 xxx 为止」时，合并的是那个 sha，而不是 upstream/main。
+4. 推送前按 nimbus-dev 的规则先确认。
 
 ## 注意
 
