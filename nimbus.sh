@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.22"
+sh_v="1.2.23"
 
 
 gl_hui='\e[37m'
@@ -5987,16 +5987,42 @@ tg_notify_menu() {
 # ---------------------------------------------------------------------------
 # 通用：下载 GitHub 资源（依次尝试 gh_proxy / 直连 / 镜像），参数为不带协议的路径
 # ---------------------------------------------------------------------------
+# GitHub 和加速代理是否都连不上（无国际出口的机器）：并行探测 TCP 443，最多 3 秒；
+# 连不上的结论缓存 1 小时（/tmp 下的标记文件），期间下载直接走国内镜像 cnb.cool，不再逐个等超时
+NB_GH_MARK="${TMPDIR:-/tmp}/.nimbus-gh-unreachable"
+nb_gh_dead() {
+	local proxy_host p1 p2 r1 r2
+	if [ -z "$NB_GH_DEAD" ]; then
+		if [ -n "$(find "$NB_GH_MARK" -mmin -60 2>/dev/null)" ]; then
+			NB_GH_DEAD=1
+		else
+			proxy_host=${gh_proxy_mirror#*://}; proxy_host=${proxy_host%%/*}
+			timeout 3 bash -c 'exec 3<>/dev/tcp/raw.githubusercontent.com/443' 2>/dev/null & p1=$!
+			timeout 3 bash -c "exec 3<>/dev/tcp/$proxy_host/443" 2>/dev/null & p2=$!
+			wait "$p1"; r1=$?
+			wait "$p2"; r2=$?
+			if [ "$r1" -ne 0 ] && [ "$r2" -ne 0 ]; then
+				NB_GH_DEAD=1
+				touch "$NB_GH_MARK" 2>/dev/null
+			else
+				NB_GH_DEAD=0
+			fi
+		fi
+		[ "$NB_GH_DEAD" = 1 ] && echo -e "${gl_hui}GitHub 和加速代理都无法连接，改用国内镜像 cnb.cool${gl_bai}" >&2
+	fi
+	[ "$NB_GH_DEAD" = 1 ]
+}
+
 nb_download() {
 	local path="$1" dest="$2" url urls cnb="" tried=" "
 	local own="raw.githubusercontent.com/zidou-kiyn/nimbus/main/"
 	# 国内镜像 cnb.cool：本仓库的文件按原路径存放，常用第三方文件（ble.sh、xwPF、realm）存放在 vendor/<原路径>
-	# 本次运行中 GitHub 已确认连不上时直接用镜像，不再逐个等超时
+	# GitHub 和代理都连不上时直接用镜像（见 nb_gh_dead），不再逐个等超时
 	case "$path" in
 		"$own"*) cnb="${nb_cnb_raw}${path#"$own"}" ;;
 		*) cnb="${nb_cnb_raw}vendor/${path}" ;;
 	esac
-	if [ -n "$cnb" ] && [ "$NB_GH_DEAD" = 1 ]; then
+	if nb_gh_dead; then
 		urls="$cnb"
 	else
 		urls="${gh_proxy}${path} https://${path} ${gh_proxy_mirror}https://${path} $cnb"
@@ -6005,7 +6031,10 @@ nb_download() {
 		case "$tried" in *" $url "*) continue ;; esac
 		tried="$tried$url "
 		if curl -fsSL --connect-timeout 8 -m 120 -o "$dest" "$url" 2>/dev/null && [ -s "$dest" ]; then
-			[ "$url" = "$cnb" ] && NB_GH_DEAD=1
+			if [ "$url" = "$cnb" ] && [ "$NB_GH_DEAD" != 1 ]; then
+				NB_GH_DEAD=1
+				touch "$NB_GH_MARK" 2>/dev/null
+			fi
 			return 0
 		fi
 	done
@@ -7928,7 +7957,9 @@ nb_self_update() {
 			mode="V6"
 		fi
 	fi
-	if [ "$mode" = "default" ]; then
+	if nb_gh_dead 2>/dev/null; then
+		urls="${nb_cnb_raw}nimbus.sh"
+	elif [ "$mode" = "default" ]; then
 		urls="https://$base ${gh_proxy_mirror}https://$base ${nb_cnb_raw}nimbus.sh"
 	else
 		urls="${gh_proxy_mirror}https://$base https://$base ${nb_cnb_raw}nimbus.sh"
@@ -7964,11 +7995,13 @@ while true; do
 	echo "全部日志: ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md"
 	echo "------------------------"
 
-	# GitHub（国内走代理）取不到时用国内镜像 cnb.cool
-	{ curl -fs --connect-timeout 8 --max-time 15 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md ||
+	# GitHub（国内走代理）取不到时用国内镜像 cnb.cool；已确认连不上 GitHub 时直接用镜像
+	local raw_base="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/"
+	nb_gh_dead 2>/dev/null && raw_base="$nb_cnb_raw"
+	{ curl -fs --connect-timeout 8 --max-time 15 "${raw_base}CHANGELOG.md" ||
 		curl -fs --connect-timeout 8 --max-time 15 "${nb_cnb_raw}CHANGELOG.md"; } | tail -n 30
 	# 只下载开头 1KB 获取版本号，避免下载整个脚本
-	local sh_v_new=$({ curl -fs --connect-timeout 8 --max-time 15 -r 0-1023 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh ||
+	local sh_v_new=$({ curl -fs --connect-timeout 8 --max-time 15 -r 0-1023 "${raw_base}nimbus.sh" ||
 		curl -fs --connect-timeout 8 --max-time 15 -r 0-1023 "${nb_cnb_raw}nimbus.sh"; } | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
 
 	if [ -z "$sh_v_new" ]; then
