@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.24"
+sh_v="1.2.25"
 
 
 gl_hui='\e[37m'
@@ -6464,8 +6464,8 @@ realm_xwpf_fetch_scripts() {
 		fi
 	done
 	mkdir -p "$XWPF_DIR/lib"
-	install -m 755 "$tmp/xwPF.sh" "$XWPF_DIR/xwPF.sh"
-	for f in "${libs[@]}"; do install -m 644 "$tmp/lib/$f" "$XWPF_DIR/lib/$f"; done
+	command install -m 755 "$tmp/xwPF.sh" "$XWPF_DIR/xwPF.sh"
+	for f in "${libs[@]}"; do command install -m 644 "$tmp/lib/$f" "$XWPF_DIR/lib/$f"; done
 	ln -sf "$XWPF_DIR/xwPF.sh" "$XWPF_DIR/pf"
 }
 
@@ -6512,7 +6512,7 @@ realm_xwpf_update() {
 		nb_service_active realm && was_active=true
 		[ "$was_active" = true ] && systemctl stop realm
 		[ -f "$XWPF_DIR/realm" ] && cp -p "$XWPF_DIR/realm" "$XWPF_DIR/realm.bak"
-		install -m 755 "$tmp/realm" "$XWPF_DIR/realm"
+		command install -m 755 "$tmp/realm" "$XWPF_DIR/realm"
 		[ "$was_active" = true ] && systemctl start realm
 		echo -e "realm: ${realm_old:-未安装} → ${gl_lv}$(nb_realm_version)${gl_bai}（旧版本备份为 $XWPF_DIR/realm.bak）"
 		if [ "$was_active" = true ]; then
