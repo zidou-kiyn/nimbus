@@ -173,3 +173,9 @@ Realm 端口转发：无国际出口的国内机器也能首次安装。
 2.仓库每次 push 由 GitHub Actions 自动同步到 cnb.cool/zidou-kiyn/nimbus。上述下载在 GitHub 和代理都失败后改从该镜像下载；本次运行中确认 GitHub 连不上后，后续下载直接走镜像，不再逐个等待超时。
 3.首次安装也可直接用镜像：bash <(curl -sL https://cnb.cool/zidou-kiyn/nimbus/-/git/raw/main/nimbus.sh)。ble.sh 程序本身、Komari、Realm 等第三方组件仍需能访问 GitHub 或代理。
 ------------------------
+2026-10-28   v1.2.21
+Komari 探针安装前检查面板能否连接。
+1.填好探针网址后先请求一次面板，连不上时提示原因：探针装好也无法上报（例如无国际出口的国内机器连不上 Cloudflare 上的面板），可选择取消或仍然安装。
+2.同时给出中转办法：在能访问面板的机器上用 Realm 转发一个端口到面板的 443，本机 /etc/hosts 把面板域名指向中转机，探针网址填 https://面板域名:中转端口。
+3.安装脚本下载失败时说明原因，无国际出口的机器需手动上传 /opt/komari/agent。
+------------------------

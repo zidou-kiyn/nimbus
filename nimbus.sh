@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.20"
+sh_v="1.2.21"
 
 
 gl_hui='\e[37m'
@@ -6311,6 +6311,16 @@ komari_agent_menu() {
 					echo -e "${gl_hong}请输入以 http:// 或 https:// 开头的网址${gl_bai}"
 				done
 				endpoint=${endpoint%/}
+				# 先确认能连上面板，否则探针装好也无法上报（例如无国际出口的国内机器连不上境外面板）
+				install curl
+				echo "正在检查面板连通性..."
+				if ! curl -s -o /dev/null --connect-timeout 6 -m 12 "$endpoint"; then
+					echo -e "${gl_huang}本机无法连接 $endpoint，探针装好后也无法上报数据${gl_bai}"
+					echo "如果本机没有国际出口，可经一台能访问面板的机器中转：在中转机用 Realm 转发一个端口到面板的 443，"
+					echo "本机 /etc/hosts 把面板域名指向中转机，探针网址填 https://面板域名:中转端口（Cloudflare 支持带端口的访问）"
+					read -r -e -p "仍然继续安装吗？(y/N): " choice
+					[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; break_end; continue; }
+				fi
 				while true; do
 					read -r -e -p "自动发现密钥（面板 设置 → 自动发现）: " key
 					[ -n "$key" ] && [[ "$key" != *[[:space:]]* ]] && break
@@ -6357,7 +6367,7 @@ komari_agent_menu() {
 				if [ -s "$tmp" ] && head -1 "$tmp" | grep -q '^#!'; then
 					bash "$tmp" "${args[@]}"
 				else
-					echo -e "${gl_hong}安装脚本下载失败${gl_bai}"
+					echo -e "${gl_hong}安装脚本下载失败${gl_bai}（GitHub 和加速镜像都无法连接；无国际出口的机器需手动上传 /opt/komari/agent）"
 				fi
 				rm -f "$tmp"
 				break_end
