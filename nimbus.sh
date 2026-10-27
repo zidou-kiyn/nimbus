@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.6"
+sh_v="1.2.7"
 
 
 gl_hui='\e[37m'
@@ -5925,18 +5925,39 @@ realm_xwpf() {
 }
 
 # ---------------------------------------------------------------------------
-# XBoard-node 节点（cedar2025/xboard-node）
+# XBoard-node 节点（Hei-XiaoHu/Xboard-Node，cedar2025/Xboard-Node 的维护分支）
 # ---------------------------------------------------------------------------
 xboard_node_menu() {
 	root_use
-	local choice panel token node_id kernel installer="/root/xboard-node-install.sh"
+	local choice panel token node_id kernel arch bindir installer="/root/xboard-node-install.sh" repo="Hei-XiaoHu/Xboard-Node"
+	local -a bin_args
 	xbn_fetch() {
-		if nb_download raw.githubusercontent.com/cedar2025/xboard-node/dev/install.sh "$installer" && head -1 "$installer" | grep -q '^#!'; then
+		if nb_download "raw.githubusercontent.com/$repo/main/install.sh" "$installer" && head -1 "$installer" | grep -q '^#!'; then
 			return 0
 		fi
 		echo -e "${gl_hong}安装脚本下载失败${gl_bai}"
 		return 1
 	}
+	# 安装脚本只会直连 github.com 下载二进制，国内机器会失败：先用 nb_download（走代理）下好，再用 --binary 交给它
+	xbn_fetch_bins() {
+		bin_args=()
+		case "$(uname -m)" in
+			x86_64|amd64) arch=amd64 ;;
+			aarch64|arm64) arch=arm64 ;;
+			*) return 0 ;;
+		esac
+		bindir=$(mktemp -d) || return 0
+		echo "正在下载 xboard-node / xbctl 最新版（linux-$arch）..."
+		if nb_download "github.com/$repo/releases/latest/download/xboard-node-linux-$arch" "$bindir/xboard-node" &&
+			nb_download "github.com/$repo/releases/latest/download/xbctl-linux-$arch" "$bindir/xbctl"; then
+			chmod +x "$bindir/xboard-node" "$bindir/xbctl"
+			bin_args=(--binary "$bindir/xboard-node" --xbctl-binary "$bindir/xbctl")
+		else
+			rm -rf "$bindir"; bindir=""
+			echo -e "${gl_huang}预下载失败，改由安装脚本直接下载${gl_bai}"
+		fi
+	}
+	xbn_cleanup_bins() { [ -n "$bindir" ] && rm -rf "$bindir"; bindir=""; }
 	while true; do
 		clear
 		echo "XBoard-node 节点"
@@ -5948,7 +5969,8 @@ xboard_node_menu() {
 		else
 			echo -e "当前状态: ${gl_hui}未安装${gl_bai}"
 		fi
-		echo -e "${gl_hui}项目地址: https://github.com/cedar2025/xboard-node（dev 分支安装脚本）${gl_bai}"
+		[ -x /usr/local/bin/xboard-node ] && echo "当前版本: $(/usr/local/bin/xboard-node -v 2>/dev/null | head -n 1)"
+		echo -e "${gl_hui}项目地址: https://github.com/$repo（main 分支安装脚本 + 最新 release）${gl_bai}"
 		echo "------------------------------------------------"
 		echo "1. 安装 / 重新配置             2. 查看状态"
 		echo "3. 升级                        4. 卸载"
@@ -5985,11 +6007,21 @@ xboard_node_menu() {
 				read -r -e -p "确认安装？(Y/N): " choice
 				[[ "$choice" =~ ^[Yy]$ ]] || { echo "已取消"; break_end; continue; }
 				install curl
-				xbn_fetch && bash "$installer" --mode node --panel "$panel" --token "$token" --node-id "$node_id" --kernel "$kernel"
+				if xbn_fetch; then
+					xbn_fetch_bins
+					bash "$installer" --mode node --panel "$panel" --token "$token" --node-id "$node_id" --kernel "$kernel" "${bin_args[@]}"
+					xbn_cleanup_bins
+				fi
 				break_end
 				;;
 			2) [ -f "$installer" ] || xbn_fetch; [ -f "$installer" ] && bash "$installer" status; break_end ;;
-			3) xbn_fetch && bash "$installer" upgrade; break_end ;;
+			3)
+				if xbn_fetch; then
+					xbn_fetch_bins
+					bash "$installer" upgrade "${bin_args[@]}"
+					xbn_cleanup_bins
+				fi
+				break_end ;;
 			4)
 				echo "卸载 XBoard-node：输入 Y 仅卸载程序；输入 purge 同时删除配置 /etc/xboard-node"
 				read -r -e -p "请输入 (Y/purge/N): " choice

@@ -87,3 +87,9 @@ tmux 推荐配置优化（Termius 手机/电脑 + tmux 内运行 pi）。
 4.防误触：显示灰色建议时 Ctrl+J 原本会「接受建议并执行」，Ctrl+R 搜索中 Ctrl+J 原本会直接执行，均改为不执行。
 5.新机开荒原 17–22 步顺延为 18–23 步。
 ------------------------
+2026-10-27   v1.2.7
+XBoard-node 改用 Hei-XiaoHu/Xboard-Node。
+1.安装脚本和程序改从 Hei-XiaoHu/Xboard-Node（cedar2025/Xboard-Node 的维护分支，内核升级与适配）下载：main 分支的安装脚本 + 最新 release，命令行参数和配置目录不变，已装的节点选「升级」即可切换。
+2.安装和升级前先由 Nimbus 下载 xboard-node / xbctl（国内机器走 GitHub 代理），再交给安装脚本，修复国内机器直连 GitHub 下载失败。
+3.菜单显示当前已安装的版本。
+------------------------
