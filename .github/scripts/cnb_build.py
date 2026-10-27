@@ -88,8 +88,9 @@ def strip_docs(steps):
     blocks = re.split(r"(?<=------------------------\n)", p.read_text(encoding="utf-8"))
     p.write_text("".join(b for b in blocks if not BANNED.search(b)), encoding="utf-8")
 
-    # 同步任务本身（含上面这些关键词）不放进镜像
+    # 同步任务本身和开发用的 .pi/（含上面这些关键词，服务器也用不到）不放进镜像
     shutil.rmtree(ROOT / ".github")
+    shutil.rmtree(ROOT / ".pi", ignore_errors=True)
 
 
 # ---------------------------------------------------------------- 第三方文件
