@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.15"
+sh_v="1.2.16"
 
 
 gl_hui='\e[37m'
@@ -1944,6 +1944,43 @@ linux_clean() {
 
 
 
+# XanMod 官方 APT 公钥（https://dl.xanmod.org/archive.key，指纹 D38D 7D1D A134 9567 ADED 882D 86F7 D09E E734 E623）
+# 官方地址和 GitHub 都连不上时（如无国际出口的国内机器）使用
+nb_xanmod_key() {
+	cat <<'NB_XANMOD_KEY'
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v2
+
+mQENBFhxW04BCAC61HuxBVf1XJiQjXu/DSAtVcnuK38geDoDjcqFtHskFy32NgJG
+X118EFNym6noF+oibaSftI9yjHthWvMnYZ/+DPwd7YZhbAjBvxMIQCsP6cFVxrgc
+VV8g+uh4TCfbpalDBFoncRhQCgkmDN9Vd4kIWRh6BHJuzpKB/h2KxUHZVEKgWlK2
+dR1xUtbrc+kp8gLwPbxTgC3tZ4x2uMMMlnbyCMSRa5oJ/AvoW4W1XphKL9ivsFHM
+PSQkUBDvgv2RPw+0XBxPy8SYE0r0onx0ZIpjJRTODt3bSV6/0owwlpNogV9bT8HY
+kl3+w3mTwax6S1akHZuJtLkZS0uUBz1BHt5bABEBAAG0IVhhbk1vZCBLZXJuZWwg
+PGtlcm5lbEB4YW5tb2Qub3JnPokBNwQTAQgAIQUCWHFbTgIbAwULCQgHAgYVCAkK
+CwIEFgIDAQIeAQIXgAAKCRCG99Ce5zTmIwTmB/9/S4rmwU6efDgEaBDwBDbOfLBA
+P2+kDpabjG4K+V4NSvDqlPN49KrI7C21jHghAa2VuTPbSZVQ9ziUd5DjX9OuXov8
+CYVG+rrlG1UadHS8SBpgw0gNylEvo9/U6u0hl8mrbVOlpzu+eE+e4cMTHax2y580
+fC2xmnM8wKgyRFEyVc6ilWU+UNTAeUFlg0YfU3cV1Ut4DzVFfamtNYg0p7Q/9MSy
+VgFpt5C2U5prk4wi++51OgrtaNhMrUhzYXLINWVF6IrXhQ+mkI/FWXUZ0oyVo55v
++dQzuds/gos90q+tKyE514pYAmwQSftSjf+RmHOMpPQyMZZKSywrz4vlfveDuQEN
+BFhxW04BCACs5bXq73MDb2+AsvNL2XkkbnzmE4K3k0gejB9OxrO+puAZn3wWyYIk
+b0Op8qVUh+/FIiW/uFfmdFD8BypC3YkCNfg6e74f5TT3qQciccpMGy62teo3jfhT
+T8E1OL1i76ALq7eNbByJKiKLBrTUDM6BDIeRZBWXQMase4+aqUAP47Kd/ByPsmCh
+/pzb6yPdDPKwkspELssdPXYI7enddjQsCPoBko0j8CTPgKqMTeCuKMXCtD2gtRBN
+eoVj4cbjZoZvBh8oJktzbYA8FX8eKdxIXhSP9MoVOPSWhxIQdwzkzUPK+0vUV8jA
+NBTnGOkrRJPOHGPJWFWnTUGrzvcwi7czABEBAAGJAR8EGAEIAAkFAlhxW04CGwwA
+CgkQhvfQnuc05iMIswgAmzSpCHFGKdkFLdC673FidJcL8adKFTO5Mpyholc5N8vG
+ROJbpso+DpssF14NKoBfBWqPRgHxYzHakxHiNf0R2+EEwXH3rblzpx3PXzB0OgNe
+T9T0UStrGgc9nZ8nZVURHZZ2z5zakEWS+rB2TiSxz3YArR3wiTHQW49G09uZvfp6
+5Mim2w+eUxbQ689eT0DlDI1d2eDP/j5lrv1elsg3kBE2Awzdvi8DdGUpMFrSsYJw
+WS85uZrwbeAs/nPO62wNIvAbbRsWnDg3AV3vc02eRvy52tTBY1W/67N02M4AxgPd
+ukDDFZMifwa03yTHD/a57O4dFOnzsEVojBnbzQ7W7w==
+=HKlF
+-----END PGP PUBLIC KEY BLOCK-----
+NB_XANMOD_KEY
+}
+
 bbr_on() {
 
 # BBR + fq 统一写入 sysctl.d
@@ -2791,8 +2828,7 @@ bbrv3() {
 				local keyring="/usr/share/keyrings/xanmod-archive-keyring.gpg"
 				local list_file="/etc/apt/sources.list.d/xanmod-release.list"
 				local key_url="https://dl.xanmod.org/archive.key"
-				local fallback_key_url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/archive.key"
-				local os_codename=""
+				local os_codename="" repo tmpkey
 
 				if command -v lsb_release >/dev/null 2>&1; then
 					os_codename=$(lsb_release -sc)
@@ -2818,12 +2854,38 @@ bbrv3() {
 
 				install wget gnupg ca-certificates
 				mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
-				if ! wget -qO - "$key_url" | gpg --dearmor -o "$keyring" --yes; then
-					echo "官方密钥下载失败，尝试备用下载源..."
-					wget -qO - "$fallback_key_url" | gpg --dearmor -o "$keyring" --yes || return 1
+
+				# 仓库：官方 deb.xanmod.org 连不上时（如无国际出口的国内机器）改用清华 TUNA 镜像
+				if nb_tcp_ok deb.xanmod.org 80; then
+					repo="http://deb.xanmod.org"
+				elif nb_tcp_ok mirrors.tuna.tsinghua.edu.cn 443; then
+					repo="https://mirrors.tuna.tsinghua.edu.cn/xanmod"
+					echo "XanMod 官方仓库无法连接，改用清华 TUNA 镜像"
+				else
+					echo -e "${gl_hong}XanMod 官方仓库和清华 TUNA 镜像都无法连接，请检查网络${gl_bai}"
+					return 1
 				fi
+
+				# 公钥：官方 → GitHub 备份（国内走代理）→ 内置；官方仓库连不上时直接用内置公钥，避免逐个等待超时
+				tmpkey=$(mktemp)
+				if [ "$repo" = "http://deb.xanmod.org" ] &&
+					{ wget -q -T 15 -t 2 -O "$tmpkey" "$key_url" && grep -q 'BEGIN PGP PUBLIC KEY' "$tmpkey"; }; then
+					:
+				elif [ "$repo" = "http://deb.xanmod.org" ] &&
+					nb_download raw.githubusercontent.com/zidou-kiyn/nimbus/main/archive.key "$tmpkey" && grep -q 'BEGIN PGP PUBLIC KEY' "$tmpkey"; then
+					echo "官方密钥下载失败，已使用备用下载源"
+				else
+					nb_xanmod_key > "$tmpkey"
+				fi
+				if ! gpg --dearmor < "$tmpkey" > "$keyring.tmp" 2>/dev/null || [ ! -s "$keyring.tmp" ]; then
+					rm -f "$tmpkey" "$keyring.tmp"
+					echo "XanMod 公钥导入失败"
+					return 1
+				fi
+				rm -f "$tmpkey"
+				mv -f "$keyring.tmp" "$keyring"
 				chmod 644 "$keyring"
-				echo "deb [signed-by=$keyring] http://deb.xanmod.org $os_codename main" > "$list_file"
+				echo "deb [signed-by=$keyring] $repo $os_codename main" > "$list_file"
 		  }
 
 		  xanmod_detect_psabi_level() {
@@ -2842,7 +2904,7 @@ bbrv3() {
 
 		  xanmod_package_available() {
 				local package="$1"
-				apt-cache policy "$package" 2>/dev/null | grep -q 'Candidate: [^ ]'
+				LC_ALL=C apt-cache policy "$package" 2>/dev/null | grep -q 'Candidate: [^ ]'
 		  }
 
 		  xanmod_detect_package() {

@@ -68,7 +68,7 @@
 
 ## BBRv3 加速
 
-- 从 XanMod 官方 APT 源安装 **LTS** 内核，按 CPU 指令集自动选择 `x64v1`–`x64v3`。
+- 从 XanMod 官方 APT 源安装 **LTS** 内核，按 CPU 指令集自动选择 `x64v1`–`x64v3`。官方源连不上时（如无国际出口的国内机器）自动改用清华 TUNA 镜像，并使用内置公钥。
 - 拥塞控制 `bbr`（XanMod 内核中即 BBRv3），队列算法 `fq`，写入 `/etc/sysctl.d/99-nimbus-bbr.conf`。
 - 支持 Debian 12+ / Ubuntu 24.04+ 的 x86_64 机器，安装后需要重启。
 - **Proxmox VE 宿主机、容器、非 x86_64 或其他发行版不更换内核**，只开启内核自带的 BBR + fq，无需重启。PVE 的判断依据是 `pveversion` 命令、`/etc/pve` 目录或 `pve-manager` 软件包，与主机名无关。

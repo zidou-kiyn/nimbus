@@ -143,3 +143,9 @@ TG-bot SSH 登录提醒支持非 root 用户登录。
 3.只替换官方格式的源（路径为 /debian、/debian-security、/ubuntu、/ubuntu-ports），docker、nodesource、xanmod 等第三方源不动；原文件备份到 /etc/apt/nimbus-backup/。
 4.apt update 的连接超时改为 20 秒，个别源连不上时不会再卡几分钟。
 ------------------------
+2026-10-28   v1.2.16
+BBRv3 适配无国际出口的国内机器，并修复中文系统找不到内核包。
+1.原来安装 XanMod 要从 dl.xanmod.org 下载公钥、从 deb.xanmod.org 装内核，连不上境外的机器会卡住很久（wget 默认等 15 分钟并重试 20 次）。
+2.现在先检查 deb.xanmod.org 能否连接，连不上就改用清华 TUNA 的 XanMod 镜像（与官方同步）；公钥依次尝试官方、GitHub 备份，都不可用时使用脚本内置的官方公钥（指纹 D38D 7D1D A134 9567 ADED 882D 86F7 D09E E734 E623），下载都加了超时。
+3.修复系统语言为中文时提示「软件源中未找到适配此 CPU 的 XanMod LTS 内核包」：检测候选版本时 apt 输出的是「候选：」而不是「Candidate:」，现改为按英文输出检测。
+------------------------
