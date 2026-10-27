@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.21"
+sh_v="1.2.22"
 
 
 gl_hui='\e[37m'
@@ -5990,8 +5990,12 @@ tg_notify_menu() {
 nb_download() {
 	local path="$1" dest="$2" url urls cnb="" tried=" "
 	local own="raw.githubusercontent.com/zidou-kiyn/nimbus/main/"
-	# 本仓库的文件可以从国内镜像 cnb.cool 下载；本次运行中 GitHub 已确认连不上时直接用镜像，不再逐个等超时
-	case "$path" in "$own"*) cnb="${nb_cnb_raw}${path#"$own"}" ;; esac
+	# 国内镜像 cnb.cool：本仓库的文件按原路径存放，常用第三方文件（ble.sh、xwPF、realm）存放在 vendor/<原路径>
+	# 本次运行中 GitHub 已确认连不上时直接用镜像，不再逐个等超时
+	case "$path" in
+		"$own"*) cnb="${nb_cnb_raw}${path#"$own"}" ;;
+		*) cnb="${nb_cnb_raw}vendor/${path}" ;;
+	esac
 	if [ -n "$cnb" ] && [ "$NB_GH_DEAD" = 1 ]; then
 		urls="$cnb"
 	else

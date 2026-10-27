@@ -1,11 +1,13 @@
-# 每次 push 到 main 时同步到国内镜像 cnb.cool/zidou-kiyn/nimbus
-# 无国际出口的服务器（GitHub 和代理都连不上）从这个镜像下载 nimbus.sh 和 res/ 下的配置
-# 需要在仓库 Settings → Secrets and variables → Actions 添加 CNB_TOKEN（cnb.cool 访问令牌，需仓库写权限）
+# 同步到国内镜像 cnb.cool/zidou-kiyn/nimbus（无国际出口的服务器从这里下载 Nimbus 和常用第三方文件）
+# 镜像内容由 .github/scripts/cnb_build.py 生成：去掉 XBoard-node 相关内容，加入 vendor/（ble.sh、xwPF、realm）
+# 需要仓库 Secret CNB_TOKEN（cnb.cool 访问令牌，需仓库写权限）
 name: Sync to CNB
 
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: "30 19 * * *"   # 每天北京时间 03:30 刷新第三方文件（ble.sh nightly 等）
   workflow_dispatch:
 
 concurrency:
@@ -17,8 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+
+      - name: Build mirror content
+        run: python3 .github/scripts/cnb_build.py
 
       - name: Push to cnb.cool
         env:
@@ -28,4 +31,11 @@ jobs:
             echo "::error::未设置 CNB_TOKEN secret"
             exit 1
           fi
-          git push --force "https://cnb:${CNB_TOKEN}@cnb.cool/zidou-kiyn/nimbus.git" HEAD:main
+          # 镜像只保留一个提交（不带 GitHub 历史，历史里有 XBoard 相关内容），每次强制覆盖
+          rm -rf .git
+          git init -q -b main
+          git config user.name "nimbus-sync"
+          git config user.email "nimbus-sync@users.noreply.github.com"
+          git add -A
+          git commit -q -m "sync ${GITHUB_SHA::7}"
+          git push --force "https://cnb:${CNB_TOKEN}@cnb.cool/zidou-kiyn/nimbus.git" main
