@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.11"
+sh_v="1.2.12"
 
 
 gl_hui='\e[37m'
@@ -1883,62 +1883,132 @@ sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
 }
 
 
-# 写入 DNS（参数取自调用方的 dns1_ipv4 等变量）。按默认路由判断 IPv4/IPv6，不查公网 IP（无国际出口时会卡住）；
+# 云厂商（按 DMI 信息判断）：输出 aliyun / tencent，其他输出为空
+nb_cloud_vendor() {
+	case "$(cat /sys/class/dmi/id/sys_vendor /sys/class/dmi/id/product_name 2>/dev/null)" in
+		*Alibaba*|*Aliyun*) echo aliyun ;;
+		*Tencent*) echo tencent ;;
+	esac
+}
+
+# DHCP 下发的 DNS（依次查 dhcpcd、dhclient、systemd-networkd、NetworkManager），取不到时用云厂商内网 DNS；输出空格分隔的地址
+nb_default_dns() {
+	local ifc ns="" lease
+	ifc=$(ip route show default 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit }}')
+	if [ -n "$ifc" ]; then
+		command -v dhcpcd >/dev/null 2>&1 &&
+			ns=$(dhcpcd -U "$ifc" 2>/dev/null | sed -n 's/^domain_name_servers=//p' | tr -d "'\"")
+		if [ -z "$ns" ]; then
+			lease=$(ls -t /var/lib/dhcp/dhclient*"$ifc"*.lease* /var/lib/dhcp/dhclient.lease* /var/lib/dhclient/*.lease* 2>/dev/null | head -1)
+			[ -n "$lease" ] && ns=$(grep -h 'option domain-name-servers' "$lease" 2>/dev/null | tail -1 | sed 's/.*domain-name-servers //; s/;//; s/,/ /g')
+		fi
+		[ -z "$ns" ] && ns=$(cat /run/systemd/netif/leases/* 2>/dev/null | sed -n 's/^DNS=//p' | head -1)
+		[ -z "$ns" ] && command -v nmcli >/dev/null 2>&1 &&
+			ns=$(nmcli -g IP4.DNS device show "$ifc" 2>/dev/null | tr '|' ' ')
+	fi
+	ns=$(printf '%s\n' $ns | grep -E '^[0-9A-Fa-f.:]+$' | awk '!seen[$0]++' | paste -sd' ' -)
+	if [ -z "$ns" ]; then
+		case "$(nb_cloud_vendor)" in
+			aliyun) ns="100.100.2.136 100.100.2.138" ;;
+			tencent) ns="183.60.83.19 183.60.82.98" ;;
+		esac
+	fi
+	[ -n "$ns" ] && echo "$ns"
+}
+
+# 写入 /etc/resolv.conf：参数 1 为写入后是否锁定（true/false），其余为 nameserver 地址
+# 写入前备份；原来是链接（如指向 systemd-resolved）时替换为普通文件，避免写进 /run 下的临时文件
 # 写入后验证解析，不通则还原原配置（例如国内无国际出口的机器选了国外 DNS）
-set_dns() {
-	local conf=/etc/resolv.conf bak was_immutable=false
+nb_write_resolv() {
+	local lock="$1" conf=/etc/resolv.conf bak link="" was_immutable=false d
+	shift
 	lsattr "$conf" 2>/dev/null | awk '{print $1}' | grep -q i && was_immutable=true
-	bak="$conf.bak.$(date +%Y%m%d-%H%M%S)"
+	bak=$(mktemp "$conf.bak.$(date +%Y%m%d-%H%M%S).XXXX")
 	chattr -i "$conf" 2>/dev/null
 	cat "$conf" > "$bak" 2>/dev/null
-
-	{
-		if [ -n "$(ip -4 route show default 2>/dev/null)" ]; then
-			echo "nameserver $dns1_ipv4"
-			echo "nameserver $dns2_ipv4"
-		fi
-		if [ -n "$(ip -6 route show default 2>/dev/null)" ]; then
-			echo "nameserver $dns1_ipv6"
-			echo "nameserver $dns2_ipv6"
-		fi
-	} > "$conf"
-	if [ ! -s "$conf" ]; then
-		echo "nameserver $dns1_ipv4" >> "$conf"
-		echo "nameserver $dns2_ipv4" >> "$conf"
+	if [ -L "$conf" ]; then
+		link=$(readlink "$conf")
+		rm -f "$conf"
 	fi
+	for d in "$@"; do echo "nameserver $d"; done > "$conf"
 
 	echo "正在验证 DNS 解析..."
 	if command -v getent >/dev/null 2>&1 &&
 		! RES_OPTIONS="timeout:2 attempts:1" timeout 15 getent ahosts www.qq.com >/dev/null 2>&1 &&
 		! RES_OPTIONS="timeout:2 attempts:1" timeout 15 getent ahosts www.baidu.com >/dev/null 2>&1; then
-		cat "$bak" > "$conf"
+		if [ -n "$link" ]; then
+			rm -f "$conf"; ln -s "$link" "$conf"
+		else
+			cat "$bak" > "$conf"
+		fi
 		[ "$was_immutable" = true ] && chattr +i "$conf" 2>/dev/null
 		echo -e "${gl_hong}新的 DNS 无法解析域名，已还原原配置${gl_bai}（本机可能无法访问这些 DNS 服务器，国内机器请选国内 DNS）"
 		return 1
 	fi
-	chattr +i "$conf" 2>/dev/null
+	[ "$lock" = true ] && chattr +i "$conf" 2>/dev/null
 	echo -e "${gl_lv}DNS 已更新${gl_bai}（原配置备份在 $bak）"
 }
 
+# 写入 DNS（地址取自调用方的 dns1_ipv4 等变量）。按默认路由判断 IPv4/IPv6，不查公网 IP（无国际出口时会卡住）
+set_dns() {
+	local -a ns=()
+	[ -n "$(ip -4 route show default 2>/dev/null)" ] && ns+=("$dns1_ipv4" "$dns2_ipv4")
+	[ -n "$(ip -6 route show default 2>/dev/null)" ] && ns+=("$dns1_ipv6" "$dns2_ipv6")
+	[ "${#ns[@]}" -gt 0 ] || ns=("$dns1_ipv4" "$dns2_ipv4")
+	nb_write_resolv true "${ns[@]}"
+}
 
+# 恢复默认 DNS：systemd-resolved 管理的恢复为 stub 链接；否则写回 DHCP 下发的 DNS（阿里云 / 腾讯云即内网 DNS），不锁定，交还 DHCP 维护
+nb_dns_restore_default() {
+	local conf=/etc/resolv.conf ns bak
+	if command systemctl is-active --quiet systemd-resolved 2>/dev/null && [ -e /run/systemd/resolve/stub-resolv.conf ]; then
+		chattr -i "$conf" 2>/dev/null
+		if [ "$(readlink "$conf")" != "../run/systemd/resolve/stub-resolv.conf" ]; then
+			bak=$(mktemp "$conf.bak.$(date +%Y%m%d-%H%M%S).XXXX")
+			cat "$conf" > "$bak" 2>/dev/null
+			rm -f "$conf"
+			ln -s ../run/systemd/resolve/stub-resolv.conf "$conf"
+			systemctl restart systemd-resolved 2>/dev/null
+			echo -e "${gl_lv}已恢复由 systemd-resolved 管理 DNS${gl_bai}（原配置备份在 $bak）"
+		else
+			echo -e "${gl_lv}DNS 已由 systemd-resolved 管理，无需恢复${gl_bai}"
+		fi
+		return 0
+	fi
+	ns=$(nb_default_dns)
+	if [ -z "$ns" ]; then
+		echo -e "${gl_hong}未能获取 DHCP 下发的 DNS，也未识别到云厂商，请用手动编辑${gl_bai}"
+		return 1
+	fi
+	echo "默认 DNS: $ns"
+	# shellcheck disable=SC2086
+	nb_write_resolv false $ns
+}
 
 set_dns_ui() {
 root_use
+local vendor
+vendor=$(nb_cloud_vendor)
 while true; do
 	clear
 	echo "优化DNS地址"
 	echo "------------------------"
 	echo "当前DNS地址"
-	cat /etc/resolv.conf
+	grep -vE '^[[:space:]]*(#|$)' /etc/resolv.conf
 	echo "------------------------"
+	case "$vendor" in
+		aliyun) echo -e "${gl_huang}检测到阿里云，推荐选 4 恢复内网 DNS（延迟最低，不受公网波动影响）${gl_bai}" ;;
+		tencent) echo -e "${gl_huang}检测到腾讯云，推荐选 4 恢复内网 DNS（延迟最低，不受公网波动影响）${gl_bai}" ;;
+	esac
 	echo ""
 	echo "1. 国外DNS优化: "
 	echo " v4: 1.1.1.1 8.8.8.8"
 	echo " v6: 2606:4700:4700::1111 2001:4860:4860::8888"
 	echo "2. 国内DNS优化: "
-	echo " v4: 223.5.5.5 183.60.83.19"
-	echo " v6: 2400:3200::1 2400:da00::6666"
+	echo " v4: 223.5.5.5 119.29.29.29"
+	echo " v6: 2400:3200::1 2402:4e00::"
 	echo "3. 手动编辑DNS配置"
+	echo "4. 恢复默认DNS（DHCP 下发，阿里云 / 腾讯云为内网 DNS）"
 	echo "------------------------"
 	echo "0. 返回上一级选单"
 	echo "------------------------"
@@ -1954,9 +2024,9 @@ while true; do
 		;;
 	  2)
 		local dns1_ipv4="223.5.5.5"
-		local dns2_ipv4="183.60.83.19"
+		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
-		local dns2_ipv6="2400:da00::6666"
+		local dns2_ipv6="2402:4e00::"
 		set_dns
 		break_end
 		;;
@@ -1965,6 +2035,10 @@ while true; do
 		chattr -i /etc/resolv.conf
 		nano /etc/resolv.conf
 		chattr +i /etc/resolv.conf
+		;;
+	  4)
+		nb_dns_restore_default
+		break_end
 		;;
 	  *)
 		break
