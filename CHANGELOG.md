@@ -136,3 +136,10 @@ TG-bot SSH 登录提醒支持非 root 用户登录。
 3.触发条件不变：sshrc 中的 SSH_TTY 判断保证只有交互式登录才提醒，sudo -i、tmux、scp/sftp 等不会触发；sshrc 挂载行不变，已部署的机器重新运行菜单即可。
 4.未安装 sudo 的系统给出提示，仅 root 登录提醒；卸载时一并删除 sudoers 规则。
 ------------------------
+2026-10-28   v1.2.15
+系统更新前检查更新源能否连通，连不上时可一键切换镜像。
+1.原因：DD 后的国内机器常常仍用 security.debian.org 等境外源，apt update 会卡在连接上很久（默认每个地址等 120 秒，还会逐个尝试 IPv4 / IPv6）。
+2.Debian / Ubuntu 更新前先检查所有 apt 源（不依赖 curl），有连不上的就列出来并提供选择：阿里云 / 腾讯云机器切换到内网镜像（mirrors.cloud.aliyuncs.com / mirrors.tencentyun.com，不占公网流量），其他国内机器切换到阿里云公共镜像，也可以不切换继续或取消。
+3.只替换官方格式的源（路径为 /debian、/debian-security、/ubuntu、/ubuntu-ports），docker、nodesource、xanmod 等第三方源不动；原文件备份到 /etc/apt/nimbus-backup/。
+4.apt update 的连接超时改为 20 秒，个别源连不上时不会再卡几分钟。
+------------------------

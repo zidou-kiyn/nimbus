@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.14"
+sh_v="1.2.15"
 
 
 gl_hui='\e[37m'
@@ -1753,6 +1753,82 @@ set_timedate() {
 
 
 
+# apt 源里的主机（scheme://host，去重）
+nb_apt_hosts() {
+	cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null |
+		grep -vE '^[[:space:]]*#' | grep -oE 'https?://[^/[:space:]]+' | awk '!seen[$0]++'
+}
+
+# TCP 能否连通（参数：主机 端口），不依赖 curl，最多等 5 秒
+nb_tcp_ok() {
+	timeout 5 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null
+}
+
+# 把标准布局的 Debian / Ubuntu 源（路径为 /debian /debian-security /ubuntu /ubuntu-ports）换成指定镜像（参数：scheme://host）
+# 第三方源（docker、nodesource 等）路径不同，不会被改；原文件备份到 /etc/apt/nimbus-backup/时间戳/
+nb_apt_set_mirror() {
+	local base="$1" f dir changed=0
+	local re='https?://[^/[:space:]]+/(debian|debian-security|ubuntu|ubuntu-ports)(/?)([[:space:]]|$)'
+	dir="/etc/apt/nimbus-backup/$(date +%Y%m%d-%H%M%S)"
+	for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+		[ -f "$f" ] && grep -qE "$re" "$f" || continue
+		mkdir -p "$dir" && cp -a "$f" "$dir/"
+		sed -i -E "s#${re}#${base}/\\1\\2\\3#g" "$f"
+		changed=$((changed + 1))
+	done
+	if [ "$changed" -gt 0 ]; then
+		echo -e "${gl_lv}已切换到 ${base#*://}${gl_bai}（原文件备份在 $dir）"
+	else
+		echo -e "${gl_huang}没有找到可替换的 Debian / Ubuntu 官方格式源，未修改${gl_bai}"
+	fi
+}
+
+# 更新前检查 apt 源能否连通：连不上的源会让 apt update 卡很久（如 DD 后的国内机器仍用 security.debian.org）
+# 阿里云 / 腾讯云推荐内网镜像，其他国内机器推荐公共镜像。返回 1 表示用户取消更新
+nb_apt_source_check() {
+	local hosts h hp port bad="" mirror="" label="" choice
+	hosts=$(nb_apt_hosts)
+	[ -n "$hosts" ] || return 0
+	echo "正在检查更新源连通性..."
+	for h in $hosts; do
+		hp=${h#*://}
+		port=80
+		[ "${h%%://*}" = https ] && port=443
+		nb_tcp_ok "$hp" "$port" || bad="$bad $hp"
+	done
+	[ -n "$bad" ] || return 0
+
+	echo -e "${gl_huang}以下更新源无法连接，直接更新会长时间卡住:${gl_bai}"
+	for h in $bad; do echo "  $h"; done
+	case "$(nb_cloud_vendor)" in
+		aliyun) mirror="http://mirrors.cloud.aliyuncs.com"; label="阿里云内网镜像" ;;
+		tencent) mirror="http://mirrors.tencentyun.com"; label="腾讯云内网镜像" ;;
+	esac
+	[ -n "$mirror" ] && ! nb_tcp_ok "${mirror#*://}" 80 && mirror=""
+	if [ -z "$mirror" ] && nb_in_cn && nb_tcp_ok mirrors.aliyun.com 80; then
+		mirror="http://mirrors.aliyun.com"; label="阿里云公共镜像"
+	fi
+
+	if [ -z "$mirror" ]; then
+		echo "可先到 系统工具 → 20 切换更新源，再执行更新"
+		read -r -e -p "仍然继续更新吗？(y/N): " choice
+		[[ "$choice" =~ ^[Yy]$ ]]
+		return
+	fi
+	echo "------------------------"
+	echo "1. 切换到${label} ${mirror#*://}（推荐）"
+	echo "2. 不切换，继续更新"
+	echo "0. 取消更新"
+	echo "------------------------"
+	read -r -e -p "请输入你的选择 [默认 1]: " choice
+	case "${choice:-1}" in
+		1) nb_apt_set_mirror "$mirror" ;;
+		2) ;;
+		*) return 1 ;;
+	esac
+	return 0
+}
+
 # 修复dpkg中断问题
 fix_dpkg() {
 	pkill -9 -f 'apt|dpkg'
@@ -1769,7 +1845,9 @@ linux_update() {
 		yum -y update
 	elif command -v apt &>/dev/null; then
 		fix_dpkg
-		DEBIAN_FRONTEND=noninteractive apt update -y
+		nb_apt_source_check || { echo "已取消更新"; return 1; }
+		# 连不上的源最多等 20 秒（默认 120 秒，且会逐个尝试 IPv4 / IPv6 地址）
+		DEBIAN_FRONTEND=noninteractive apt -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update -y
 		DEBIAN_FRONTEND=noninteractive apt full-upgrade -y
 	elif command -v apk &>/dev/null; then
 		apk update && apk upgrade
