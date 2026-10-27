@@ -102,7 +102,7 @@
 ## TG-bot 监控预警
 
 - **资源监控**：CPU、内存、硬盘使用率和出入站流量超过阈值时，推送 Telegram 告警；由 systemd 服务 `tg-check-notify` 托管，无 systemd 的系统用 crontab。
-- **SSH 登录提醒**：通过 `/etc/ssh/sshrc` 触发，每次 SSH 登录都会推送通知。
+- **SSH 登录提醒**：通过 `/etc/ssh/sshrc` 触发，只在交互式 SSH 登录时推送；`sudo -i`、tmux、scp/sftp 等无终端连接不会触发。非 root 用户登录时经 sudoers 规则 `/etc/sudoers.d/nimbus-tg-ssh`（只允许免密运行这一个脚本）以 root 读取配置，通知中显示实际登录名。
 - Bot Token、Chat ID 和阈值在菜单中交互填写，保存在 `/etc/nimbus/tg-notify.conf`（权限 0600）。
 - **话题群**：Chat ID 是开启了话题（Topics）的超级群时，可分别填写 SSH 登录提醒和资源告警的话题 ID（配置项 `SSH_THREAD_ID` / `MONITOR_THREAD_ID`），留空发到 General。旧版部署会自动迁移，菜单中也可一键卸载。
 

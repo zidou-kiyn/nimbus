@@ -129,3 +129,10 @@ TG-bot 监控预警支持话题群；Realm 端口转发新增一键更新。
 1.TG-bot 监控预警：Chat ID 是开启了话题（Topics）的超级群（-100 开头）时，新增「话题设置」：SSH 登录提醒和资源告警可分别发到不同话题，填写后会向每个话题发送测试消息确认。话题 ID 保存为配置文件中的 SSH_THREAD_ID / MONITOR_THREAD_ID，留空则和以前一样发到 General 或私聊；旧配置文件无需改动。
 2.Realm 端口转发：已安装 xwPF 时，菜单改为「管理转发规则（pf）」和「更新 xwPF 脚本和 realm」，并显示当前版本与服务状态。xwPF 自带的更新直连 GitHub，国内机器会卡住或失败；新的更新全部走 Nimbus 的下载通道（国内自动用代理），realm 版本跟随 xwPF 中适配过的 REALM_VERSION，更新时自动停启服务，旧程序备份为 /usr/local/bin/realm.bak，转发规则和配置不受影响。
 ------------------------
+2026-10-28   v1.2.14
+TG-bot SSH 登录提醒支持非 root 用户登录。
+1.原来配置文件仅 root 可读，用普通用户（如 sudo 用户）SSH 登录时提醒脚本读不到配置，不会发通知。
+2.现在部署时新增 sudoers 规则 /etc/sudoers.d/nimbus-tg-ssh（0440，写入前用 visudo 校验）：只允许免密以 root 运行 /usr/local/bin/tg-ssh-notify.sh 这一个脚本。普通用户登录时脚本经 sudo -n 以 root 重新运行，登录名取 SUDO_USER，登录 IP 作为参数传入并只接受 IP 字符；配置文件仍是 0600。
+3.触发条件不变：sshrc 中的 SSH_TTY 判断保证只有交互式登录才提醒，sudo -i、tmux、scp/sftp 等不会触发；sshrc 挂载行不变，已部署的机器重新运行菜单即可。
+4.未安装 sudo 的系统给出提示，仅 root 登录提醒；卸载时一并删除 sudoers 规则。
+------------------------

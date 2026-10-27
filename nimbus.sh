@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.13"
+sh_v="1.2.14"
 
 
 gl_hui='\e[37m'
@@ -5085,6 +5085,8 @@ TG_NOTIFY_MONITOR="/root/TG-check-notify.sh"
 TG_NOTIFY_SSH="/usr/local/bin/tg-ssh-notify.sh"
 TG_NOTIFY_UNIT="/etc/systemd/system/tg-check-notify.service"
 TG_NOTIFY_SSHRC="/etc/ssh/sshrc"
+TG_NOTIFY_SUDOERS="/etc/sudoers.d/nimbus-tg-ssh"
+TG_NOTIFY_SUDOERS_MARK="# nimbus: 本文件由 nimbus TG-bot 监控预警创建"
 # shellcheck disable=SC2016  # 写入 sshrc 的原文，$SSH_TTY 由 sshrc 运行时展开
 TG_NOTIFY_SSHRC_LINE='[ -n "$SSH_TTY" ] && /usr/local/bin/tg-ssh-notify.sh </dev/null >/dev/null 2>&1 &'
 TG_NOTIFY_SSHRC_MARK="# nimbus: 本文件由 nimbus TG-bot 监控预警创建"
@@ -5583,6 +5585,37 @@ XAUTH
 	return 0
 }
 
+# 非 root 用户登录时，sshrc 以登录用户身份运行提醒脚本，读不到 0600 的配置文件；
+# 这条 sudoers 规则只允许免密以 root 运行这一个脚本，由脚本自己切换（sudo -n），配置文件仍只有 root 可读
+tg_notify_sudoers_install() {
+	local tmp
+	if ! type -P sudo >/dev/null 2>&1 || [ ! -d /etc/sudoers.d ]; then
+		echo -e "${gl_huang}提示:${gl_bai} 未安装 sudo，SSH 登录提醒仅对 root 登录生效"
+		return 1
+	fi
+	tmp=$(mktemp) || return 1
+	cat > "$tmp" <<SUDOERS
+$TG_NOTIFY_SUDOERS_MARK
+# 允许任意用户免密以 root 运行 SSH 登录提醒脚本（读取仅 root 可读的配置文件），不授予其他权限
+ALL ALL=(root) NOPASSWD: $TG_NOTIFY_SSH
+Defaults!$TG_NOTIFY_SSH !requiretty
+SUDOERS
+	if ! visudo -cqf "$tmp" >/dev/null 2>&1; then
+		rm -f "$tmp"
+		echo -e "${gl_hong}sudoers 规则校验失败${gl_bai}，SSH 登录提醒仅对 root 登录生效"
+		return 1
+	fi
+	chown root:root "$tmp" && chmod 440 "$tmp" && mv -f "$tmp" "$TG_NOTIFY_SUDOERS"
+	if ! grep -qE '^[@#]includedir[[:space:]]+/etc/sudoers.d' /etc/sudoers 2>/dev/null; then
+		echo -e "${gl_huang}提示:${gl_bai} /etc/sudoers 未包含 /etc/sudoers.d，非 root 用户登录不会提醒"
+	fi
+}
+
+tg_notify_sudoers_remove() {
+	[ -f "$TG_NOTIFY_SUDOERS" ] || return 0
+	head -1 "$TG_NOTIFY_SUDOERS" | grep -qxF "$TG_NOTIFY_SUDOERS_MARK" && rm -f "$TG_NOTIFY_SUDOERS" && echo "已删除 $TG_NOTIFY_SUDOERS"
+}
+
 tg_notify_sshrc_remove() {
 	[ -f "$TG_NOTIFY_SSHRC" ] || return 0
 	local tmp
@@ -5675,6 +5708,11 @@ tg_notify_show_result() {
 	else
 		echo -e "SSH 登录提醒 sshrc       : ${gl_hong}未挂载${gl_bai}"
 	fi
+	if [ -f "$TG_NOTIFY_SUDOERS" ]; then
+		echo -e "非 root 登录提醒 sudoers : ${gl_lv}已启用${gl_bai} ($TG_NOTIFY_SUDOERS)"
+	else
+		echo -e "非 root 登录提醒 sudoers : ${gl_hui}未启用，仅 root 登录会提醒${gl_bai}"
+	fi
 	echo "配置文件                 : $TG_NOTIFY_CONF ($(stat -c '%a %U:%G' "$TG_NOTIFY_CONF" 2>/dev/null))"
 }
 
@@ -5725,19 +5763,20 @@ tg_notify_install() {
 	tg_notify_fetch TG-SSH-check-notify.sh "$TG_NOTIFY_SSH" || return 1
 	echo "已部署 $TG_NOTIFY_MONITOR 和 $TG_NOTIFY_SSH"
 	tg_notify_sshrc_install
+	tg_notify_sudoers_install
 	tg_notify_start_monitor
 
 	echo ""
 	echo -e "${gl_lv}TG-bot 监控预警已部署${gl_bai}"
 	tg_notify_show_result
 	echo -e "${gl_hui}-关于流量，重启服务器将重新计算-${gl_bai}"
-	echo -e "${gl_hui}SSH 登录提醒仅对 root 登录生效（配置文件仅 root 可读）${gl_bai}"
+	echo -e "${gl_hui}SSH 登录提醒只在交互式登录时发送；sudo -i、tmux 和 scp/sftp 等无终端连接不会触发${gl_bai}"
 	echo -e "${gl_hui}其他机器请直接运行本菜单重新配置；若要复制部署，需同时带上 $TG_NOTIFY_CONF 并修改机器标识${gl_bai}"
 }
 
 tg_notify_uninstall() {
 	local confirm
-	echo "将停用并删除 TG-bot 监控预警的服务、sshrc 挂载、脚本和配置文件"
+	echo "将停用并删除 TG-bot 监控预警的服务、sshrc 挂载、sudoers 规则、脚本和配置文件"
 	read -r -e -p "确定继续吗？(Y/N): " confirm
 	case "$confirm" in
 		[Yy]) ;;
@@ -5753,6 +5792,7 @@ tg_notify_uninstall() {
 	tg_notify_kill_monitor
 	tg_notify_migrate_legacy
 	tg_notify_sshrc_remove
+	tg_notify_sudoers_remove
 	rm -f "$TG_NOTIFY_MONITOR" "$TG_NOTIFY_SSH" "$TG_NOTIFY_CONF"
 	rmdir /etc/nimbus 2>/dev/null
 	echo -e "${gl_lv}TG-bot 监控预警已卸载${gl_bai}"
