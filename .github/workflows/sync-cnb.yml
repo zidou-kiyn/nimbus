@@ -1,0 +1,31 @@
+# 每次 push 到 main 时同步到国内镜像 cnb.cool/zidou-kiyn/nimbus
+# 无国际出口的服务器（GitHub 和代理都连不上）从这个镜像下载 nimbus.sh 和 res/ 下的配置
+# 需要在仓库 Settings → Secrets and variables → Actions 添加 CNB_TOKEN（cnb.cool 访问令牌，需仓库写权限）
+name: Sync to CNB
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-cnb
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to cnb.cool
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        run: |
+          if [ -z "$CNB_TOKEN" ]; then
+            echo "::error::未设置 CNB_TOKEN secret"
+            exit 1
+          fi
+          git push --force "https://cnb:${CNB_TOKEN}@cnb.cool/zidou-kiyn/nimbus.git" HEAD:main

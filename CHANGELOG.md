@@ -167,3 +167,9 @@ Realm 端口转发：无国际出口的国内机器也能首次安装。
 2.现在只把 sshd_config.d 中与登录方式有关的设置（PermitRootLogin、PasswordAuthentication、PubkeyAuthentication、ChallengeResponseAuthentication、KbdInteractiveAuthentication）注释掉，标记为「# [nimbus 已停用]」，端口等其他配置保留；不再动 ssh_config.d。
 3.已受影响的机器：用原来的 22 端口登录，再用 nb 修改 SSH 端口（新机开荒第 13 步）改回原端口。
 ------------------------
+2026-10-28   v1.2.20
+新增国内镜像 cnb.cool，没有国际出口的机器也能下载 Nimbus 自己的文件。
+1.原因：tmux / ble.sh 推荐配置、fail2ban 配置、TG-bot 监控脚本、限流关机脚本、自更新和更新日志都从 GitHub 下载，GitHub 和 ghfast 代理都连不上的机器上这些功能会失败。
+2.仓库每次 push 由 GitHub Actions 自动同步到 cnb.cool/zidou-kiyn/nimbus。上述下载在 GitHub 和代理都失败后改从该镜像下载；本次运行中确认 GitHub 连不上后，后续下载直接走镜像，不再逐个等待超时。
+3.首次安装也可直接用镜像：bash <(curl -sL https://cnb.cool/zidou-kiyn/nimbus/-/git/raw/main/nimbus.sh)。ble.sh 程序本身、Komari、Realm 等第三方组件仍需能访问 GitHub 或代理。
+------------------------

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.19"
+sh_v="1.2.20"
 
 
 gl_hui='\e[37m'
@@ -20,6 +20,8 @@ canshu="default"
 
 # GitHub 下载代理（CN/V6 模式使用）；公共代理，失效时改这里即可，备选: https://gh-proxy.com/
 gh_proxy_mirror="https://ghfast.top/"
+# 本仓库的国内镜像（cnb.cool，GitHub 每次 push 由 Actions 自动同步）。GitHub 和代理都连不上（无国际出口）时使用
+nb_cnb_raw="https://cnb.cool/zidou-kiyn/nimbus/-/git/raw/main/"
 
 quanju_canshu() {
 if [ "$canshu" = "CN" ]; then
@@ -74,7 +76,7 @@ nimbus_self_install() {
 		[ "$src" = "$(readlink -f ~/nimbus.sh 2>/dev/null)" ] || nb_atomic_copy "$src" ~/nimbus.sh
 	elif ! grep -q "^sh_v=\"$sh_v\"" ~/nimbus.sh 2>/dev/null; then
 		tmp=$(mktemp 2>/dev/null) || return 0
-		for url in "$raw_url" "${gh_proxy_mirror}${raw_url}"; do
+		for url in "$raw_url" "${gh_proxy_mirror}${raw_url}" "${nb_cnb_raw}nimbus.sh"; do
 			if curl -fsSL --connect-timeout 5 -m 60 -o "$tmp" "$url" 2>/dev/null && head -1 "$tmp" | grep -q '^#!/bin/bash' && grep -q '^sh_v=' "$tmp"; then
 				if [ "$url" != "$raw_url" ]; then
 					sed -i 's/^canshu="default"/canshu="CN"/' "$tmp"
@@ -1561,9 +1563,7 @@ f2b_install_sshd() {
 		install rsyslog || return 1
 		/bin/systemctl enable --now rsyslog.service || return 1
 		cd /etc/fail2ban/jail.d/
-		curl --fail --silent --show-error --location \
-			--output centos-ssh.conf \
-			"${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/res/config/fail2ban/centos-ssh.conf" || return 1
+		nb_download raw.githubusercontent.com/zidou-kiyn/nimbus/main/res/config/fail2ban/centos-ssh.conf centos-ssh.conf || return 1
 		if [ ! -e /var/log/secure ]; then
 			touch /var/log/secure || return 1
 			chmod 0600 /var/log/secure || return 1
@@ -5622,10 +5622,10 @@ tg_notify_write_config() {
 
 tg_notify_fetch() {
 	local name="$1" dest="$2" url tmp
-	url="${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/${name}"
+	url="raw.githubusercontent.com/zidou-kiyn/nimbus/main/${name}"
 	mkdir -p "$(dirname "$dest")" || return 1
 	tmp=$(mktemp "${dest}.XXXXXX") || return 1
-	if curl -fsS -m 60 -o "$tmp" "$url" && head -1 "$tmp" | grep -q '^#!/bin/bash'; then
+	if nb_download "$url" "$tmp" && head -1 "$tmp" | grep -q '^#!/bin/bash'; then
 		chown root:root "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$dest"
 	else
 		rm -f "$tmp"
@@ -5988,11 +5988,20 @@ tg_notify_menu() {
 # 通用：下载 GitHub 资源（依次尝试 gh_proxy / 直连 / 镜像），参数为不带协议的路径
 # ---------------------------------------------------------------------------
 nb_download() {
-	local path="$1" dest="$2" url tried=" "
-	for url in "${gh_proxy}${path}" "https://${path}" "${gh_proxy_mirror}https://${path}"; do
+	local path="$1" dest="$2" url urls cnb="" tried=" "
+	local own="raw.githubusercontent.com/zidou-kiyn/nimbus/main/"
+	# 本仓库的文件可以从国内镜像 cnb.cool 下载；本次运行中 GitHub 已确认连不上时直接用镜像，不再逐个等超时
+	case "$path" in "$own"*) cnb="${nb_cnb_raw}${path#"$own"}" ;; esac
+	if [ -n "$cnb" ] && [ "$NB_GH_DEAD" = 1 ]; then
+		urls="$cnb"
+	else
+		urls="${gh_proxy}${path} https://${path} ${gh_proxy_mirror}https://${path} $cnb"
+	fi
+	for url in $urls; do
 		case "$tried" in *" $url "*) continue ;; esac
 		tried="$tried$url "
 		if curl -fsSL --connect-timeout 8 -m 120 -o "$dest" "$url" 2>/dev/null && [ -s "$dest" ]; then
+			[ "$url" = "$cnb" ] && NB_GH_DEAD=1
 			return 0
 		fi
 	done
@@ -7753,7 +7762,7 @@ EOF
 					cz_day=${cz_day:-1}
 
 					cd ~
-					if ! curl -fsS -o ~/Limiting_Shut_down.sh ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/Limiting_Shut_down1.sh; then
+					if ! nb_download raw.githubusercontent.com/zidou-kiyn/nimbus/main/Limiting_Shut_down1.sh ~/Limiting_Shut_down.sh; then
 						echo "限流关机脚本下载失败"
 						continue
 					fi
@@ -7906,9 +7915,9 @@ nb_self_update() {
 		fi
 	fi
 	if [ "$mode" = "default" ]; then
-		urls="https://$base ${gh_proxy_mirror}https://$base"
+		urls="https://$base ${gh_proxy_mirror}https://$base ${nb_cnb_raw}nimbus.sh"
 	else
-		urls="${gh_proxy_mirror}https://$base https://$base"
+		urls="${gh_proxy_mirror}https://$base https://$base ${nb_cnb_raw}nimbus.sh"
 	fi
 
 	tmp=$(mktemp ~/nimbus_tmp.XXXXXX) || return 1
@@ -7941,9 +7950,12 @@ while true; do
 	echo "全部日志: ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md"
 	echo "------------------------"
 
-	curl -s --max-time 15 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md | tail -n 30
+	# GitHub（国内走代理）取不到时用国内镜像 cnb.cool
+	{ curl -fs --connect-timeout 8 --max-time 15 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/CHANGELOG.md ||
+		curl -fs --connect-timeout 8 --max-time 15 "${nb_cnb_raw}CHANGELOG.md"; } | tail -n 30
 	# 只下载开头 1KB 获取版本号，避免下载整个脚本
-	local sh_v_new=$(curl -s --max-time 15 -r 0-1023 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
+	local sh_v_new=$({ curl -fs --connect-timeout 8 --max-time 15 -r 0-1023 ${gh_proxy}raw.githubusercontent.com/zidou-kiyn/nimbus/main/nimbus.sh ||
+		curl -fs --connect-timeout 8 --max-time 15 -r 0-1023 "${nb_cnb_raw}nimbus.sh"; } | grep -o 'sh_v="[0-9.]*"' | head -1 | cut -d '"' -f 2)
 
 	if [ -z "$sh_v_new" ]; then
 		echo -e "${gl_hong}无法获取最新版本信息，请检查网络连接${gl_bai}"
