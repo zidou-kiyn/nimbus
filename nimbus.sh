@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.25"
+sh_v="1.2.26"
 
 
 gl_hui='\e[37m'
@@ -952,31 +952,51 @@ block_ip() {
 
 
 
-enable_ddos_defense() {
-	# 开启防御 DDoS
-	iptables -A DOCKER-USER -p tcp --syn -m limit --limit 500/s --limit-burst 100 -j ACCEPT
-	iptables -A DOCKER-USER -p tcp --syn -j DROP
-	iptables -A DOCKER-USER -p udp -m limit --limit 3000/s -j ACCEPT
-	iptables -A DOCKER-USER -p udp -j DROP
-	iptables -A INPUT -p tcp --syn -m limit --limit 500/s --limit-burst 100 -j ACCEPT
-	iptables -A INPUT -p tcp --syn -j DROP
-	iptables -A INPUT -p udp -m limit --limit 3000/s -j ACCEPT
-	iptables -A INPUT -p udp -j DROP
-
+# DDoS 防御的固定规则，每行一条（Docker 的 DOCKER-USER 链和 INPUT 链各用一份）
+nb_ddos_rules() {
+	printf '%s\n' \
+		'-p tcp --syn -m limit --limit 500/s --limit-burst 100 -j ACCEPT' \
+		'-p tcp --syn -j DROP' \
+		'-p udp -m limit --limit 3000/s -j ACCEPT' \
+		'-p udp -j DROP'
 }
 
-# 关闭DDoS防御
-disable_ddos_defense() {
-	# 关闭防御 DDoS
-	iptables -D DOCKER-USER -p tcp --syn -m limit --limit 500/s --limit-burst 100 -j ACCEPT 2>/dev/null
-	iptables -D DOCKER-USER -p tcp --syn -j DROP 2>/dev/null
-	iptables -D DOCKER-USER -p udp -m limit --limit 3000/s -j ACCEPT 2>/dev/null
-	iptables -D DOCKER-USER -p udp -j DROP 2>/dev/null
-	iptables -D INPUT -p tcp --syn -m limit --limit 500/s --limit-burst 100 -j ACCEPT 2>/dev/null
-	iptables -D INPUT -p tcp --syn -j DROP 2>/dev/null
-	iptables -D INPUT -p udp -m limit --limit 3000/s -j ACCEPT 2>/dev/null
-	iptables -D INPUT -p udp -j DROP 2>/dev/null
+# 删除某条链里 DDoS 规则的所有副本（包括以前重复开启留下的）
+nb_ddos_clear_chain() {
+	local chain=$1 rule
+	while read -r rule; do
+		# shellcheck disable=SC2086
+		while iptables -C "$chain" $rule >/dev/null 2>&1; do
+			iptables -D "$chain" $rule >/dev/null 2>&1 || break
+		done
+	done < <(nb_ddos_rules)
+}
 
+enable_ddos_defense() {
+	# 规则齐全就不动，重复开启不会叠加；缺了任何一条就清掉重加，保证限速 ACCEPT 在 DROP 之前
+	local chain rule complete
+	for chain in DOCKER-USER INPUT; do
+		# 没装 Docker 时没有 DOCKER-USER 链，跳过即可
+		iptables -n -L "$chain" >/dev/null 2>&1 || continue
+		complete=1
+		while read -r rule; do
+			# shellcheck disable=SC2086
+			iptables -C "$chain" $rule >/dev/null 2>&1 || complete=
+		done < <(nb_ddos_rules)
+		[ -n "$complete" ] && continue
+		nb_ddos_clear_chain "$chain"
+		while read -r rule; do
+			# shellcheck disable=SC2086
+			iptables -A "$chain" $rule
+		done < <(nb_ddos_rules)
+	done
+}
+disable_ddos_defense() {
+	local chain
+	for chain in DOCKER-USER INPUT; do
+		iptables -n -L "$chain" >/dev/null 2>&1 || continue
+		nb_ddos_clear_chain "$chain"
+	done
 }
 
 
