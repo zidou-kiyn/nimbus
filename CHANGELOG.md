@@ -209,3 +209,8 @@ Komari 探针安装前检查面板能否连接。
 2.切换更新源、安装 Docker、切换 Docker 源时，LinuxMirrors 脚本下载失败会提示并返回失败，不再把空内容或服务器返回的错误页当脚本运行。（上游 38b9fcd）
 3.Armbian 上选「更新源」改为提示并保留现有源：LinuxMirrors 会把 Armbian 专用源改到所选镜像下，官方源和部分镜像没有 Armbian 仓库，之后 apt update 会报错。（上游 ed58dea）
 ------------------------
+2026-11-07   v1.2.28
+修复海外 Ubuntu 用「智能切换更新源」后安全更新源失效。
+1.系统工具 20「智能切换更新源」在海外 Ubuntu 上会切到官方源，LinuxMirrors 这时把安全更新源写成 https:///ubuntu/（缺主机名），之后 apt update 报错，也收不到安全更新。现在换源时直接指定官方安全源：x86 用 security.ubuntu.com，ARM 用 ports.ubuntu.com。
+2.已经换坏的机器，更新后重新执行一次「智能切换更新源」即可恢复。国内（华为云镜像）和 Debian 不受影响。
+------------------------

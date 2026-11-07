@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.27"
+sh_v="1.2.28"
 
 
 gl_hui='\e[37m'
@@ -4851,8 +4851,17 @@ switch_mirror() {
 			  --install-epel false \
 			  --pure-mode
 		else
+			# LinuxMirrors 在 Ubuntu 上用官方源时没有设置安全源主机（写成 https:///ubuntu/），apt update 报错、收不到安全更新，这里显式指定
+			local security_source=()
+			if [ "$(. /etc/os-release 2>/dev/null && echo "$ID")" = "ubuntu" ]; then
+				case "$(uname -m)" in
+					x86_64|i?86) security_source=(--source-security security.ubuntu.com) ;;
+					*) security_source=(--source-security ports.ubuntu.com) ;;
+				esac
+			fi
 			nb_linuxmirrors https://linuxmirrors.cn/main.sh \
 				--use-official-source true \
+				"${security_source[@]}" \
 				--protocol https \
 				--use-intranet-source false \
 				--backup true \
