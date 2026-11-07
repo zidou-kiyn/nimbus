@@ -1,7 +1,7 @@
 #!/bin/bash
 # Nimbus · 云服务器工具箱  https://github.com/zidou-kiyn/nimbus
 # Copyright 2026 zidou-kiyn. Licensed under Apache-2.0; derived from kejilion/sh, see NOTICE.
-sh_v="1.2.26"
+sh_v="1.2.27"
 
 
 gl_hui='\e[37m'
@@ -366,11 +366,29 @@ restart docker
 
 
 
+# 运行 LinuxMirrors 脚本。先完整下载：下载失败返回非零，不会像 bash <(curl …) 那样把空内容或错误页当脚本跑。
+# 它的精简模式进度条用了 glibc 不支持的 [[:ascii:]]，bash 5.3 起每次刷新都报「无效的正则表达式」，运行前换成 [\ -~]。
+# C / C.UTF-8 下这就是可打印 ASCII；其他语言环境按排序规则算范围、不含字母，只是走它原有的慢速分支，显示不变。
+nb_linuxmirrors() {
+	local url="$1" script ret
+	shift
+	script=$(mktemp) || return 1
+	if ! curl -fsSL "$url" -o "$script" || ! LC_ALL=C sed -i 's/\[\[:ascii:\]\]/[\\ -~]/g' "$script"; then
+		echo -e "${gl_hong}获取 LinuxMirrors 脚本失败：$url${gl_bai}"
+		rm -f "$script"
+		return 1
+	fi
+	bash "$script" "$@"
+	ret=$?
+	rm -f "$script"
+	return $ret
+}
+
 linuxmirrors_install_docker() {
 
 local country=$(nb_country)
 if [ "$country" = "CN" ]; then
-	bash <(curl -sSL https://linuxmirrors.cn/docker.sh) \
+	nb_linuxmirrors https://linuxmirrors.cn/docker.sh \
 	  --source mirrors.huaweicloud.com/docker-ce \
 	  --source-registry docker.1ms.run \
 	  --protocol https \
@@ -379,7 +397,7 @@ if [ "$country" = "CN" ]; then
 	  --close-firewall false \
 	  --ignore-backup-tips
 else
-	bash <(curl -sSL https://linuxmirrors.cn/docker.sh) \
+	nb_linuxmirrors https://linuxmirrors.cn/docker.sh \
 	  --source download.docker.com \
 	  --source-registry registry.hub.docker.com \
 	  --protocol https \
@@ -4547,7 +4565,7 @@ linux_docker() {
 			  ;;
 		  8)
 			  clear
-			  bash <(curl -sSL https://linuxmirrors.cn/docker.sh)
+			  nb_linuxmirrors https://linuxmirrors.cn/docker.sh
 			  ;;
 
 		  9)
@@ -4809,7 +4827,7 @@ switch_mirror() {
 
 	if [ "$country" = "CN" ]; then
 		echo "使用国内镜像源..."
-		bash <(curl -sSL https://linuxmirrors.cn/main.sh) \
+		nb_linuxmirrors https://linuxmirrors.cn/main.sh \
 		  --source mirrors.huaweicloud.com \
 		  --protocol https \
 		  --use-intranet-source false \
@@ -4822,7 +4840,7 @@ switch_mirror() {
 	else
 		echo "使用海外镜像源..."
 		if [ -f /etc/os-release ] && grep -qi "oracle" /etc/os-release; then
-			bash <(curl -sSL https://linuxmirrors.cn/main.sh) \
+			nb_linuxmirrors https://linuxmirrors.cn/main.sh \
 			  --source mirrors.xtom.com \
 			  --protocol https \
 			  --use-intranet-source false \
@@ -4833,7 +4851,7 @@ switch_mirror() {
 			  --install-epel false \
 			  --pure-mode
 		else
-			bash <(curl -sSL https://linuxmirrors.cn/main.sh) \
+			nb_linuxmirrors https://linuxmirrors.cn/main.sh \
 				--use-official-source true \
 				--protocol https \
 				--use-intranet-source false \
@@ -7681,6 +7699,13 @@ EOF
 		  20)
 		  root_use
 		  clear
+		  # Armbian 会显示为 Debian / Ubuntu，LinuxMirrors 会把它的 armbian.list 改到所选镜像下（官方源没有这个仓库），保留现有源
+		  if [ -f /etc/armbian-release ] || grep -Eiq '^(ID|NAME|PRETTY_NAME)="?armbian([" ]|$)' /etc/os-release 2>/dev/null; then
+			  echo -e "${gl_huang}检测到 Armbian，保留现有系统源，不切换${gl_bai}"
+			  echo -e "${gl_hui}LinuxMirrors 会把 Armbian 专用源改到所选镜像下，镜像没有 Armbian 仓库时 apt update 会报错${gl_bai}"
+			  break_end
+			  continue
+		  fi
 		  echo "选择更新源区域"
 		  echo "接入LinuxMirrors切换系统更新源"
 		  echo "------------------------"
@@ -7692,13 +7717,13 @@ EOF
 
 		  case $choice in
 			  1)
-				  bash <(curl -sSL https://linuxmirrors.cn/main.sh)
+				  nb_linuxmirrors https://linuxmirrors.cn/main.sh
 				  ;;
 			  2)
-				  bash <(curl -sSL https://linuxmirrors.cn/main.sh) --edu
+				  nb_linuxmirrors https://linuxmirrors.cn/main.sh --edu
 				  ;;
 			  3)
-				  bash <(curl -sSL https://linuxmirrors.cn/main.sh) --abroad
+				  nb_linuxmirrors https://linuxmirrors.cn/main.sh --abroad
 				  ;;
 			  4)
 				  switch_mirror false false
